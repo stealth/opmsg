@@ -24,9 +24,9 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
-#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 
 extern "C" {
 #include <openssl/dh.h>
@@ -389,6 +389,7 @@ int persona::load_dh(const string &hex)
 {
 	size_t r = 0;
 	char buf[8192];
+	bool has_pub = 0, has_priv = 0;
 
 	if (!is_hex_hash(hex))
 		return build_error("load_dh: Not a valid DH hex id", -1);
@@ -416,6 +417,7 @@ int persona::load_dh(const string &hex)
 			break;
 		dhbox->pub = dh1.release();
 		dhbox->pub_pem = string(buf, r);
+		has_pub = 1;
 	} while (0);
 
 	keys[hex] = dhbox.release();
@@ -437,7 +439,15 @@ int persona::load_dh(const string &hex)
 			return build_error("load_dh::EVP_PKEY_get1_DH: Invalid DH privkey " + hex, -1);
 		keys[hex]->priv = dh2.release();
 		keys[hex]->priv_pem = string(buf, r);
+		has_priv = 1;
 	} while (0);
+
+	// this can happen, as we leave empty dir's for already imported DH keys, that
+	// are tried to be re-imported from old mails
+	if (!has_pub && !has_priv) {
+		delete keys[hex];
+		keys.erase(hex);
+	}
 
 	return 0;
 }
@@ -765,11 +775,9 @@ DHbox *persona::add_dh_pubkey(const string &hash, const string &pem)
 // pub_b64 is taken from the message; key will later be used to send messages
 DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 {
+	struct stat st;
 	int fd = -1;
 
-/*	if (!dh_params)
-		return build_error("add_dh_key: Invalid persona (no DH params).", nullptr);
-*/
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
 		return build_error("add_dh_key::mkdir:", nullptr);
@@ -804,16 +812,11 @@ DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 
 	string hexdir = cfgbase + "/" + id + "/" + hex;
 
-	// if something went wrong, try to clean up; but we cant repair all mess if someone changed
-	// underlying DB
-	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
-		unlink(string(hexdir + "/dh.pub.pem").c_str());
-		if (rename(string(tmpdir + "/dh.pub.pem").c_str(), string(hexdir + "/dh.pub.pem").c_str()) < 0) {
-			unlink(string(tmpdir + "/dh.pub.pem").c_str());
-			rmdir(tmpdir.c_str());
-			return build_error("add_dh_key: Error storing DH pubkey " + hex, nullptr);
-		}
+	// apparently the key was already imported once, so dont do it again
+	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
+		unlink(dhfile.c_str());
 		rmdir(tmpdir.c_str());
+		return build_error("add_dh_key: Error storing DH pubkey " + hex, nullptr);
 	}
 
 	DHbox *dhb = new DHbox(dh.release(), nullptr);

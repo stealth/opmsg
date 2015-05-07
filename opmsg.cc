@@ -350,7 +350,12 @@ int do_encrypt(const string &dst_id)
 	// peer personas store to avoid using them twice
 	if (kex_id != marker::rsa_kex_id) {
 		dst_p->del_dh_pub(kex_id);
-		dst_p->del_dh_id(kex_id);
+
+		// dont delete the id itself, it would erase underlying
+		// key directory. But we want to keep it so that no DH keys
+		// are re-used, once old opmsg are decrypted and old "new" DH keys
+		// are tried to be imported again.
+		//dst_p->del_dh_id(kex_id);
 	}
 
 	return 0;

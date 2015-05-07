@@ -426,10 +426,8 @@ int message::decrypt(string &raw)
 		newdh = raw.substr(pos, nl + marker::dh_end.size() - pos);
 		raw.erase(pos, nl + marker::dh_end.size() - pos);
 		dh_keys.push_back(newdh);
-		if (!src_persona->add_dh_pubkey(khash, newdh)) {
+		if (!src_persona->add_dh_pubkey(khash, newdh))
 			dh_keys.pop_back();
-			break;
-		}
 		if (dh_keys.size() >= max_new_dh_keys)
 			break;
 	}
