@@ -13,7 +13,7 @@ LIBS+=-lcrypto
 all: opmsg
 
 opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o
-	$(LD) $(LDFLAGS) $^ $(LIBS) -o opmsg
+	$(LD) $(LDFLAGS) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o $(LIBS) -o $@
 
 opmsg.o: opmsg.cc
 	$(CXX) $(CXXFLAGS) -c $<
@@ -44,6 +44,4 @@ test: test2.cc test1.cc keystore.o config.o misc.o message.o base64.o marker.o d
 	$(CXX) $(CXXFLAGS) test2.cc keystore.o config.o misc.o base64.o marker.o message.o deleters.o $(LIBS) -o test2
 
 clean:
-	rm -rf *.o
-
-
+	rm -rf *.o opmsg

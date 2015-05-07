@@ -40,7 +40,7 @@ string &blob2hex(const string &blob, string &hex)
 
 	hex = "";
 	for (string::size_type i = 0; i < blob.size(); ++i) {
-		sprintf(h, "%02x", 0xff&blob[i]);
+		snprintf(h, 3, "%02x", 0xff&blob[i]);
 		hex += h;
 	}
 	return hex;
