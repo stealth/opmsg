@@ -39,9 +39,15 @@ message.o: message.cc message.h
 deleters.o: deleters.cc
 	$(CXX) $(CXXFLAGS) -c $<
 
-test: test2.cc test1.cc keystore.o config.o misc.o message.o base64.o marker.o deleters.o
-	$(CXX) $(CXXFLAGS) test1.cc keystore.o config.o misc.o marker.o deleters.o $(LIBS) -o test1
-	$(CXX) $(CXXFLAGS) test2.cc keystore.o config.o misc.o base64.o marker.o message.o deleters.o $(LIBS) -o test2
+test1.o:
+	$(CXX) $(CXXFLAGS) -c -I . test/test1.cc -o test/test1.o
+
+test2.o:
+	$(CXX) $(CXXFLAGS) -c -I . test/test2.cc -o test/test2.o
+
+tests: test2.o test1.o keystore.o config.o misc.o message.o base64.o marker.o deleters.o
+	$(LD) $(LDFLAGS) test/test1.o keystore.o config.o misc.o marker.o deleters.o $(LIBS) -o test/test1
+	$(LD) $(LDFLAGS) test/test2.o keystore.o config.o misc.o base64.o marker.o message.o deleters.o $(LIBS) -o test/test2
 
 clean:
 	rm -rf *.o

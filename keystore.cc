@@ -834,7 +834,10 @@ int persona::del_dh_id(const string &hex)
 		return build_error("del_dh_id: Invalid key id.", -1);
 
 	string dir = cfgbase + "/" + id + "/" + hex;
-	keys.erase(hex);
+	if (keys.count(hex) > 0) {
+		delete keys[hex];
+		keys.erase(hex);
+	}
 	return rmdir(dir.c_str());
 }
 

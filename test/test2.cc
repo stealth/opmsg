@@ -26,7 +26,7 @@ int main()
 
 	cout<<endl<<"Loading keystore...\n";
 
-	string ps = "e0013cf796f2e6e8";
+	string ps = "fc4147c7bdb56f75";
 
 	if (ks.load() < 0)
 		cerr<<ks.why()<<endl;
@@ -91,6 +91,8 @@ int main()
 	EVP_PKEY_free(nullptr);
 
 	unique_ptr<FILE, FILE_del> f(fopen("/etc/passwd", "r"), ffclose);
+
+	pers->del_dh_id(i->first);
 	return 0;
 }
 
