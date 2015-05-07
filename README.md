@@ -11,19 +11,19 @@ different.
 
 Features:
 
-    * Perfect Forward Secrecy (PFS) by means of DH Kex
-    * RSA fallback if no DH keys left
-    * fully compliant to existing SMTP/IMAP/POP etc. standards;
-      no need to touch any mail daemon/client/agent code
-    * singning messages is mandatory
-    * easy creation and throw-away of ids
-    * adds the possiblity to (re-)route messages different
-      from mail address to defeat meta data collection
-    * configurable well-established hash and crypto algorithms
-      and key lengths (RSA, DH)
-    * straight forward and open key storage, basically also managable via
-      `cd`, `rm`, `ls` and `cp` on the cmdline
-    * seamless mutt integration
+* Perfect Forward Secrecy (PFS) by means of DH Kex
+* RSA fallback if no DH keys left
+* fully compliant to existing SMTP/IMAP/POP etc. standards;
+  no need to touch any mail daemon/client/agent code
+* singning messages is mandatory
+* easy creation and throw-away of ids
+* adds the possiblity to (re-)route messages different
+  from mail address to defeat meta data collection
+* configurable well-established hash and crypto algorithms
+  and key lengths (RSA, DH)
+* straight forward and open key storage, basically also managable via
+  `cd`, `rm`, `ls` and `cp` on the cmdline
+* seamless mutt integration
 
 ```
 $ opmsg
@@ -214,5 +214,32 @@ calgo = bfcfb
 
 However, any option could also be passed as a commandline argument to
 _opmsg_.
+
+Supported ciphers
+-----------------
+
+```
+$ opmsg -C inv -D
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: Invalid crypto algorithm. Valid crypto algorithms are:
+
+opmsg: aes128cbc
+opmsg: aes128cfb
+opmsg: aes128ofb
+opmsg: aes256cbc
+opmsg: aes256cfb
+opmsg: aes256ofb
+opmsg: bfcbc
+opmsg: bfcfb
+opmsg: bfofb
+opmsg: cast5cbc
+opmsg: cast5cfb
+opmsg: cast5ofb
+opmsg: null
+
+opmsg: FAILED.
+```
 
 
