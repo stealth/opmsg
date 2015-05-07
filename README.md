@@ -9,12 +9,61 @@ your mails or create/verify detached signatures of local files.
 Even though the _opmsg_ output looks similar, the concept is entirely
 different.
 
+Features:
+
+    * Perfect Forward Secrecy (PFS) by means of DH Kex
+    * RSA fallback if no DH keys left
+    * fully compliant to existing SMTP/IMAP/POP etc. standards;
+      no need to touch any mail daemon/client/agent code
+    * singning messages is mandatory
+    * easy creation and throw-away of ids
+    * adds the possiblity to (re-)route messages different
+      from mail address to defeat meta data collection
+    * configurable well-established hash and crypto algorithms
+      and key lengths (RSA, DH)
+    * straight forward and open key storage, basically also managable via
+      `cd`, `rm`, `ls` and `cp` on the cmdline
+    * seamless mutt integration
+
+```
+$ opmsg
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+
+Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
+                [--verify file] <--persona ID> [--import] [--list] [--listpgp]
+                [--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]
+                [--phash name [--name name] [--in infile] [--out outfile]
+
+        --confdir,      -c      defaults to ~/.opmsg
+        --rsa,          -R      RSA override (dont use existing DH keys)
+        --encrypt,      -E      recipients persona hex id (-i to -o, requires -P)
+        --decrypt,      -D      decrypt --in to --out
+        --sign,         -S      create detached signature file from -i via -P
+        --verify,       -V      verify hash contained in detached file against -i
+        --persona,      -P      your persona hex id as used for signing
+        --import,       -I      import new persona from --in
+        --list,         -l      list all personas
+        --listpgp,      -L      list personas in PGP format (for mutt etc.)
+        --short                 short view of hex ids
+        --long                  long view of hex ids
+        --split                 split view of hex ids
+        --newp,         -N      create new persona (should add --name)
+        --newdhp                create new DHparams for a given -P (rarely needed)
+        --calgo,        -C      use this algo for encryption
+        --phash,        -p      use this hash algo for hashing personas
+        --in,           -i      input file (stdin)
+        --out,          -o      output file (stdout)
+        --name,         -n      use this name for newly created personas
+```
+
 Personas
 --------
 
-The key concept of _opmsg_ is the use of personas. personas are
+The key concept of _opmsg_ is the use of personas. Personas are
 an identity with a RSA key bound to it. Communication happens between
-two personas (which could be the same) which are uniquely indentified
+two personas (which could be the same) which are uniquely identified
 by the hashsum of their RSA keys:
 
 ```
@@ -135,14 +184,18 @@ set pgp_decrypt_command="/usr/local/bin/opmsg --decrypt -i %f"
 set pgp_verify_command="/usr/local/bin/opmsg --decrypt -i %f"
 ```
 
-and work with your mails as you would it with PGP/GPG before. If you
-use a mix of GPG and _opmsg_ peers, its probably wise to create
+and work with your mails as you would it with _PGP/GPG_ before. If you
+use a mix of _GPG_ and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
 parallel.
 
-You also need to setp up your local `~/.opmsg/config` to reflect
-the source persona you are using when sending your mail:
+Config file
+-----------
+
+You need to setp up your local `~/.opmsg/config` to reflect
+the source persona you are using when sending your mail via _mutt_,
+unless you specify it via `-P` on the commandline:
 
 
 ```
@@ -158,4 +211,8 @@ dh_plen = 1024
 
 calgo = bfcfb
 ```
+
+However, any option could also be passed as a commandline argument to
+_opmsg_.
+
 
