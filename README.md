@@ -15,7 +15,7 @@ Features:
 * RSA fallback if no DH keys left
 * fully compliant to existing SMTP/IMAP/POP etc. standards;
   no need to touch any mail daemon/client/agent code
-* singning messages is mandatory
+* signing messages is mandatory
 * easy creation and throw-away of ids
 * adds the possiblity to (re-)route messages different
   from mail address to defeat meta data collection
@@ -112,6 +112,9 @@ to distribute the hash, or send a picture/selfie with the hash
 and something that uniquely identifies you. Using **two additional**
 communication paths, which are unrelated to the path that
 you sent the key along, you have a high degree of trust.
+_Side-note: If you want to stay anonymous, do not send selfies
+with your persona id and dont use communication paths that can
+be mapped to you._
 
 By default `sha256` is used to hash the RSA key (more precise the
 **n** of the RSA public part), but you may also specify `ripemd160`
@@ -241,5 +244,75 @@ opmsg: null
 
 opmsg: FAILED.
 ```
+
+Examples
+--------
+
+```
+$ opmsg --list --short
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: persona list:
+opmsg: Successfully loaded 1 personas.
+opmsg: (id)     (name)  (has-RSA-priv)  (#DHkeys)
+opmsg: 1cb7992f96663853 stealth 1       0
+opmsg: SUCCESS.
+```
+Creating a detached signature for a file:
+```
+$ echo foo>foo
+$ opmsg --sign -i foo --persona 1cb7992f96663853|tee -a foo.sign
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: detached file-signing by persona 1cb7992f96663853
+opmsg: SUCCESS.
+-----BEGIN OPMSG-----
+version=1
+-----BEGIN SIGNATURE-----
+U822A12k1IZiWqRKAr6uLKT/7HGR4inKpkqzz49xLNjBf4mo91HUxcPMFGQTDB/MbE9HqtdCgHNexfIy
+GCC6Jb6egt2D70nIyhWfksW9KljdqwQzUbXp9CubxRAz5EqTS0n0ze092LuXxV4SuKV628CTBr5siIcf
+za6g3Sfh+vg=
+-----END SIGNATURE-----
+rythmz=sha256:sha256:sha256:null:DOauqyrqoH4zslO4gr3FFI7EMbcLtRzU
+src-id=1cb7992f966638531d33e59e83cd054295fb8016e5d9e35fb409630694571aba
+dst-id=1cb7992f966638531d33e59e83cd054295fb8016e5d9e35fb409630694571aba
+kex-id=00000000
+-----BEGIN OPMSG DATA-----
+b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+-----END OPMSG-----
+```
+Verifying it:
+```
+$ sha256sum foo
+b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c  foo
+$ opmsg -V foo -i foo.sign
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: verifying detached file
+opmsg: GOOD signature and hash via persona 1cb7992f96663853 1d33e59e83cd0542 95fb8016e5d9e35f b409630694571aba
+opmsg: SUCCESS.
+$ opmsg -V foo -i foo.sign --short
+
+opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: verifying detached file
+opmsg: GOOD signature and hash via persona 1cb7992f96663853
+opmsg: SUCCESS.
+```
+
+Meta data
+---------
+
+As _opmsg_ adds additional ids to the mail, it is possible to send all
+mail to random address of the destination persona provider who then
+could route it to the real mailbox or even offer everything as a single
+blob to download for everyone.
+This may be useful to defeat mail meta data collection. op-messages are
+self contained and ASCII-armored, so they could also be pasted to OTR,
+newsgroups, chats or paste-sites and picked up by the target persona from within
+a swarm.
 
 
