@@ -50,7 +50,7 @@ created. The public RSA key of this persona has to be imported by
 the remote peer that you want to opmsg-mail with via
 
 ```
-opmsg --import --phash sha256 --name stealth`
+opmsg --import --phash sha256 --name stealth
 ```
 
 just as hinted above.
@@ -89,6 +89,7 @@ Now for the coolest feature of _opmsg_: Perfect Forward Secrecy (PFS).
 
 Without any need to re-code your mail clients or add bloat to the
 SMTP protocol, _opmsg_ supports PFS by means of DH Kex out of the box.
+
 That is, as op-messages are _always_ signed by its source persona,
 whenever you send an opmsg to some other persona, a couple of
 DH keys are generated and attached to the message. The remote
@@ -139,4 +140,22 @@ use a mix of GPG and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
 parallel.
+
+You also need to setp up your local `~/.opmsg/config` to reflect
+the source persona you are using when sending your mail:
+
+
+```
+# Should use long format to avoid loading of whole keystore.
+# this is above generated persona so it owns the RSA private key
+my_id = 1cb7992f966638531d33e59e83cd054295fb8016e5d9e35fb409630694571aba
+
+# default
+rsa_len = 4096
+
+# default
+dh_plen = 1024
+
+calgo = bfcfb
+```
 
