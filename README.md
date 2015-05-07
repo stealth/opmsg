@@ -25,7 +25,16 @@ Features:
   `cd`, `rm`, `ls` and `cp` on the cmdline
 * seamless mutt integration
 
+Build
+-----
+
+_opmsg_ requires the crypto primitives from _OpenSSL_. Just relax, its
+not using the SSL/TLS proto, just the ciphering and hash algorithms.
+
 ```
+$ make
+[...]
+$ cp opmsg /usr/local/bin/
 $ opmsg
 
 opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
@@ -57,6 +66,9 @@ Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
         --out,          -o      output file (stdout)
         --name,         -n      use this name for newly created personas
 ```
+
+It successfully builds on _Linux_ and _OSX_, and probably a lot of others
+(_Solaris_, _BSD_,...).
 
 Personas
 --------
