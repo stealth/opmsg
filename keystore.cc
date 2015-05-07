@@ -767,9 +767,9 @@ DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 {
 	int fd = -1;
 
-	if (!dh_params)
+/*	if (!dh_params)
 		return build_error("add_dh_key: Invalid persona (no DH params).", nullptr);
-
+*/
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
 		return build_error("add_dh_key::mkdir:", nullptr);
