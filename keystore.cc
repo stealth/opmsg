@@ -177,8 +177,8 @@ int keystore::gen_rsa(string &pub, string &priv)
 		return build_error("gen_rsa::BN_dec2b: Error generating RSA key", -1);
 	e.reset(b);
 
-// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was bot there!
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was not there!
+#if HAVE_BN_GENCB_NEW
 	unique_ptr<BN_GENCB, BN_GENCB_del> cb(BN_GENCB_new(), BN_GENCB_free);
 	if (!(cb_ptr = cb.get()))
 		return build_error("gen_rsa: OOM", -1);
@@ -612,8 +612,8 @@ DHbox *persona::new_dh_params()
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was bot there!
-#if OPENSSL_VERSION_NUMBER >= 0x10100000L
+// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was not there!
+#if HAVE_BN_GENCB_NEW
 	unique_ptr<BN_GENCB, BN_GENCB_del> cb(BN_GENCB_new(), BN_GENCB_free);
 	if (!(cb_ptr = cb.get()))
 		return build_error("gen_rsa: OOM", nullptr);

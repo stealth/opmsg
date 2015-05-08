@@ -17,7 +17,7 @@ Features:
   no need to touch any mail daemon/client/agent code
 * signing messages is mandatory
 * easy creation and throw-away of ids
-* adds the possiblity to (re-)route messages different
+* adds the possibility to (re-)route messages different
   from mail address to defeat meta data collection
 * configurable well-established hash and crypto algorithms
   and key lengths (RSA, DH)
@@ -30,6 +30,13 @@ Build
 
 _opmsg_ requires the crypto primitives from _OpenSSL_. Just relax, its
 not using the SSL/TLS proto, just the ciphering and hash algorithms.
+
+The compilation requires a C++ compiler that supports `-std=c++11`.
+This can be configured with e.g. `make CXX=eg++ LD=eg++` on _OpenBSD_.
+
+This project supports both `BN_GENCB_new` and `BN_GENCB` for big number
+generation. To disable `BN_GENCB_new`, set `HAVE_BN_GENCB_NEW` to false:
+`make DEFS=-DHAVE_BN_GENCB_NEW=0`
 
 ```
 $ make
@@ -67,8 +74,8 @@ Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
         --name,         -n      use this name for newly created personas
 ```
 
-It successfully builds on _Linux_ and _OSX_, and probably a lot of others
-(_Solaris_, _BSD_,...).
+It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
+(_Solaris_, _FreeBSD_,...).
 
 Personas
 --------

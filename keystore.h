@@ -39,6 +39,9 @@ extern "C" {
 #include <openssl/err.h>
 }
 
+#ifndef HAVE_BN_GENCB_NEW
+#define HAVE_BN_GENCB_NEW OPENSSL_VERSION_NUMBER >= 0x10100000L
+#endif
 
 namespace opmsg {
 
