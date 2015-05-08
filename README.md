@@ -30,13 +30,17 @@ Build
 
 _opmsg_ requires the crypto primitives from _OpenSSL_. Just relax, its
 not using the SSL/TLS proto, just the ciphering and hash algorithms.
+For standard _Linux_ distros, just type `make`.
 
 The compilation requires a C++ compiler that supports `-std=c++11`.
 This can be configured with e.g. `make CXX=eg++ LD=eg++` on _OpenBSD_.
 
 This project supports both `BN_GENCB_new` and `BN_GENCB` for big number
 generation. To disable `BN_GENCB_new`, set `HAVE_BN_GENCB_NEW` to false:
-`make DEFS=-DHAVE_BN_GENCB_NEW=0`
+`make DEFS=-DHAVE_BN_GENCB_NEW=0`. So on _OpenBSD_, you would run
+`make CXX=eg++ LD=eg++ DEFS=-DHAVE_BN_GENCB_NEW=0`. On _OSX_ you should install
+your own _OpenSSL_, as Apple marks _OpenSSL_ as deprecated in favor of their own
+crypto libs.
 
 ```
 $ make
