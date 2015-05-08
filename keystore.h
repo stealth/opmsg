@@ -39,6 +39,11 @@ extern "C" {
 #include <openssl/err.h>
 }
 
+// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before
+// BN_GENCB_new was bot there!
+#ifndef HAVE_BN_GENCB_NEW
+#define HAVE_BN_GENCB_NEW OPENSSL_VERSION_NUMBER >= 0x10100000L
+#endif
 
 namespace opmsg {
 
