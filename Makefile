@@ -1,8 +1,10 @@
 CXX=c++
 DEFS=
+INC=
 
-INC=-I/usr/local/ssl/include
-LIBS=-L/usr/local/ssl/lib
+#for LibreSSL setups, define your paths here
+#INC+=-I/usr/local/libressl/include
+#LIBS+=-L/usr/local/libressl/lib64
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
