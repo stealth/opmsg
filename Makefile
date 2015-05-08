@@ -2,6 +2,10 @@ CXX=c++
 DEFS=
 INC=
 
+#this worked for me on OSX
+#INC+=-I/usr/local/ssl/include
+#LIBS+=-L/usr/local/ssl/lib
+
 #for LibreSSL setups, define your paths here
 #INC+=-I/usr/local/libressl/include
 #LIBS+=-L/usr/local/libressl/lib64
