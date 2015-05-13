@@ -688,7 +688,7 @@ int main(int argc, char **argv)
 	}
 
 	if (cmode != CMODE_PGPLIST)
-		cerr<<"\n"<<prefix<<"version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+		cerr<<"\n"<<prefix<<"version=1.1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 	if (cmode == CMODE_INVALID)
 		usage(argv[0]);

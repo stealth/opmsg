@@ -120,9 +120,11 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 {
 	unsigned char iv[OPMSG_MAX_IV_LENGTH], iv_kdf[OPMSG_MAX_KEY_LENGTH];
+	char aad_tag[16];
 	EVP_CIPHER_CTX c_ctx;
 	DHbox *dh = nullptr;
-	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "";
+	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
+	string::size_type aad_tag_insert_pos = string::npos;
 	bool no_dh_key = (kex_id_hex == marker::rsa_kex_id);
 	int ecode = 0;
 	size_t n = 0;
@@ -130,6 +132,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	for (i = 0; i < sizeof(iv); ++i)
 		iv[i] = i;
+
+	memset(aad_tag, 0, sizeof(aad_tag));
 
 	if (!src_persona || !dst_persona)
 		return build_error("encrypt: No src/dst personas specified!", -1);
@@ -165,7 +169,11 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	memcpy(iv, iv_kdf, sizeof(iv));
 	b64_encode(reinterpret_cast<char *>(iv), sizeof(iv), iv_b64);
 
-	outmsg += marker::algos + phash + ":" + khash + ":" + shash + ":" + calgo + ":" + iv_b64 + "\n";
+	outmsg = marker::algos + phash + ":" + khash + ":" + shash + ":" + calgo + ":" + iv_b64 + "\n";
+
+	// in case of GCM modes, the AAD tag value goes right after algo marker
+	aad_tag_insert_pos = outmsg.size();
+
 	outmsg += marker::src_id + src_id_hex + "\n";
 	outmsg += marker::dst_id + dst_id_hex + "\n";
 	outmsg += marker::kex_id + kex_id_hex + "\n";
@@ -184,6 +192,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		raw = outmsg;
 		return 0;
 	}
+
+	bool has_aad = (calgo.find("gcm") != string::npos);
 
 	// append public DH keys
 	for (auto it = dh_keys.begin(); it != dh_keys.end(); ++it) {
@@ -255,6 +265,12 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (EVP_EncryptInit_ex(&c_ctx, algo2cipher(calgo), nullptr, key, iv) != 1)
 		return build_error("encrypt::EVP_EncryptInit_ex: ", -1);
 
+	// GCM ciphers need special treatment, the persona src id is used as AAD
+	if (has_aad) {
+		int aadlen = 0;
+		if (EVP_EncryptUpdate(&c_ctx, nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
+			return build_error("encrypt::EVP_EncryptUpdate (AAD):", -1);
+	}
 	EVP_CIPHER_CTX_set_padding(&c_ctx, 1);
 
 	string b64_enc = "";
@@ -279,6 +295,13 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			if (EVP_EncryptFinal_ex(&c_ctx, outbuf.get() + outlen, &padlen) != 1)
 				return build_error("encrypt::EVP_EncryptFinal_ex:", -1);
 			outlen += padlen;
+			if (has_aad) {
+				if (EVP_CIPHER_CTX_ctrl(&c_ctx, EVP_CTRL_GCM_GET_TAG, sizeof(aad_tag), aad_tag) != 1)
+					return build_error("encrypt::EVP_CIPHER_CTX_ctrl:", -1);
+				b64_encode(aad_tag, sizeof(aad_tag), b64_aad_tag);
+				b64_aad_tag.insert(0, marker::aad_tag);
+				b64_aad_tag += "\n";
+			}
 		}
 		b64_encode(reinterpret_cast<const char *>(outbuf.get()), outlen, b64_enc);
 		b64size = b64_enc.size();
@@ -290,8 +313,12 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		}
 		b64_enc.clear();
 	}
+
 	EVP_CIPHER_CTX_cleanup(&c_ctx);
 	raw.clear();
+
+	if (b64_aad_tag.size() > 0)
+		outmsg.insert(aad_tag_insert_pos, b64_aad_tag);
 
 	if (sign(outmsg, src_persona, b64sig) < 0)
 		return build_error("encrypt::" + err, -1);
@@ -314,12 +341,15 @@ int message::decrypt(string &raw)
 	EVP_MD_CTX md_ctx;
 	EVP_CIPHER_CTX c_ctx;
 	unsigned char iv[OPMSG_MAX_IV_LENGTH];
+	char aad_tag[16];
 	unsigned int i = 0;
-	string s = "", iv_kdf = "";
+	string s = "", iv_kdf = "", b64_aad_tag = "";
 	size_t n = 0;
 
 	for (i = 0; i < sizeof(iv); ++i)
 		iv[i] = i;
+
+	memset(aad_tag, 0, sizeof(aad_tag));
 
 	// nuke leading header, dont accept leading junk
 	if ((pos = raw.find(marker::opmsg_begin)) != 0)
@@ -328,7 +358,7 @@ int message::decrypt(string &raw)
 
 	// next must come "version=1", nuke it
 	if ((pos = raw.find(marker::version)) != 0)
-		return build_error("decrypt: Not in OPMSGv1 format (2).", -1);
+		return build_error("decrypt: Not in OPMSGv1 format. Maybe need to update opmsg? (2).", -1);
 	raw.erase(0, pos + marker::version.size());
 
 	// nuke OPMSg trailer, its also not part of signing. Do not accept junk after
@@ -373,6 +403,19 @@ int message::decrypt(string &raw)
 	if (iv_kdf.size() < sizeof(iv))
 		return build_error("decrypt: Error decoding IV value.", -1);
 	memcpy(iv, iv_kdf.c_str(), sizeof(iv));
+
+	// get AAD tag if any (only required by GCM mode ciphers)
+	if ((pos = raw.find(marker::aad_tag)) != string::npos) {
+		pos += marker::aad_tag.size();
+		if ((nl = raw.find("\n", pos)) == string::npos) {
+			return build_error("decrypt: Error finding end of AAD tag.", -1);
+		}
+		b64_aad_tag = raw.substr(pos, nl - pos);
+		b64_decode(b64_aad_tag, s);
+		if (s.size() != sizeof(aad_tag))
+			return build_error("decrypt: Invalid AAD tag size.", -1);
+		memcpy(aad_tag, s.c_str(), sizeof(aad_tag));
+	}
 
 	// src persona
 	if ((pos = raw.find(marker::src_id)) == string::npos)
@@ -441,6 +484,8 @@ int message::decrypt(string &raw)
 		raw.erase(0, pos + marker::opmsg_databegin.size());
 		return 0;
 	}
+
+	bool has_aad = (calgo.find("gcm") != string::npos);
 
 	// kex id
 	if ((pos = raw.find(marker::kex_id)) == string::npos)
@@ -541,6 +586,14 @@ int message::decrypt(string &raw)
 	EVP_CIPHER_CTX_init(&c_ctx);
 	if (EVP_DecryptInit_ex(&c_ctx, algo2cipher(calgo), nullptr, key, iv) != 1)
 		return build_error("decrypt::EVP_DecryptInit_ex: ", -1);
+
+	if (has_aad) {
+		int aadlen = 0;
+		if (EVP_CIPHER_CTX_ctrl(&c_ctx, EVP_CTRL_GCM_SET_TAG, sizeof(aad_tag), aad_tag) != 1)
+			return build_error("decrypt::EVP_CIPHER_CTX_ctrl: ", -1);
+		if (EVP_DecryptUpdate(&c_ctx, nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
+			return build_error("decrypt::EVP_DecryptUpdate (AAD):", -1);
+	}
 
 	EVP_CIPHER_CTX_set_padding(&c_ctx, 1);
 

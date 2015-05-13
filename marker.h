@@ -45,6 +45,8 @@ extern std::string src_id;
 extern std::string dst_id;
 extern std::string kex_id;
 
+extern std::string aad_tag;
+
 extern std::string rsa_kex_id;
 
 extern std::string algos;
