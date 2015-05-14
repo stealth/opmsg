@@ -22,13 +22,13 @@ opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o
 	$(LD) $(LDFLAGS) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o $(LIBS) -o $@
 
 opmsg.o: opmsg.cc
-	$(CXX) $(CXXFLAGS) -c $<
+	$(CXX) $(CXXFLAGS) -U__STRICT_ANSI__ -c $<
 
 marker.o: marker.cc marker.h
 	$(CXX) $(CXXFLAGS) -c $<
 
 keystore.o: keystore.cc keystore.h
-	$(CXX) $(CXXFLAGS) -c $<
+	$(CXX) $(CXXFLAGS) -U__STRICT_ANSI__ -c $<
 
 base64.o: base64.cc base64.h
 	$(CXX) $(CXXFLAGS) -c $<
