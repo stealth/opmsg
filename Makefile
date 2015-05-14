@@ -2,6 +2,11 @@ CXX=c++
 DEFS=
 INC=
 
+
+# Cygwin was reported to require this:
+#DEFS+=-U__STRICT_ANSI__
+
+
 #this worked for me on OSX
 #INC+=-I/usr/local/ssl/include
 #LIBS+=-L/usr/local/ssl/lib

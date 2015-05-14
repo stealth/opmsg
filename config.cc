@@ -23,6 +23,7 @@
 #include <fstream>
 #include <string>
 #include <cstring>
+#include <cstdlib>
 
 
 namespace opmsg {
@@ -95,15 +96,15 @@ int parse_config(const string &cfgbase)
 		else if (sline.find("rsa_e=") == 0)
 			config::rsa_e = sline.substr(6);
 		else if (sline.find("rsa_len=") == 0) {
-			config::rsa_len = stoi(sline.substr(8));
+			config::rsa_len = strtoul(sline.substr(8).c_str(), nullptr, 0);
 			if (config::rsa_len < 1024 || config::rsa_len > 16000)
 				config::rsa_len = 4096;
 		} else if (sline.find("dh_plen=") == 0) {
-			config::dh_plen = stoi(sline.substr(8));
+			config::dh_plen = strtoul(sline.substr(8).c_str(), nullptr, 0);
 			if (config::dh_plen < 512 || config::dh_plen > 8192)
 				config::dh_plen = 1024;
 		} else if (sline.find("new_dh_keys=") == 0) {
-			config::new_dh_keys = stoi(sline.substr(12));
+			config::new_dh_keys = strtoul(sline.substr(12).c_str(), nullptr, 0);
 			if (config::new_dh_keys < 0 || config::new_dh_keys > 100)
 				config::new_dh_keys = 3;
 		} else if (sline == "rsa_override")
