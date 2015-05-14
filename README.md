@@ -143,8 +143,7 @@ _Side-note: If you want to stay anonymous, do not send selfies
 with your persona id and dont use communication paths that can
 be mapped to you._
 
-By default `sha256` is used to hash the RSA key (more precise the
-**n** of the RSA public part), but you may also specify `ripemd160`
+By default `sha256` is used to hash the RSA keyblob but you may also specify `ripemd160`
 or `sha512`. Whichever you choose, its important that your peer knows
 about it during import, because you will be referenced with this hex hash value
 in future.
