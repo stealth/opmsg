@@ -27,6 +27,9 @@ namespace marker {
 extern std::string dh_begin;
 extern std::string dh_end;
 
+extern std::string rsa_pub_begin;
+extern std::string rsa_pub_end;
+
 extern std::string sig_begin;
 extern std::string sig_end;
 

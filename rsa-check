@@ -1,0 +1,10 @@
+#!/bin/sh
+
+# Check local personas to contain reasonable RSA e values.
+# Needed for older opmsg versions. No longer necessary for opmsg that prints "version=1.2" or
+# better.
+# In the unlikely case that you find an Exponent of "1" (0x1), someone tampered with parts of
+# your key.
+
+for i in ~/.opmsg/*; do openssl rsa -pubin -text -in $i/rsa.pub.pem 2>&1|grep Exponent|grep -v 65537; done
+

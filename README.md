@@ -17,12 +17,13 @@ Features:
   no need to touch any mail daemon/client/agent code
 * signing messages is mandatory
 * easy creation and throw-away of ids
+* support for 1:1 key bindings to auto-select source key per destination
 * adds the possibility to (re-)route messages different
   from mail address to defeat meta data collection
 * configurable well-established hash and crypto algorithms
   and key lengths (RSA, DH)
 * straight forward and open key storage, basically also managable via
-  `cd`, `rm`, `ls` and `cp` on the cmdline
+  `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
 
 Build
@@ -48,13 +49,14 @@ $ make
 $ cp opmsg /usr/local/bin/
 $ opmsg
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 
 Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
                 [--verify file] <--persona ID> [--import] [--list] [--listpgp]
                 [--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]
                 [--phash name [--name name] [--in infile] [--out outfile]
+                [--link target id]
 
         --confdir,      -c      defaults to ~/.opmsg
         --rsa,          -R      RSA override (dont use existing DH keys)
@@ -70,12 +72,14 @@ Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
         --long                  long view of hex ids
         --split                 split view of hex ids
         --newp,         -N      create new persona (should add --name)
+        --link                  link (your) --persona as default src to this target id
         --newdhp                create new DHparams for a given -P (rarely needed)
         --calgo,        -C      use this algo for encryption
         --phash,        -p      use this hash algo for hashing personas
         --in,           -i      input file (stdin)
         --out,          -o      output file (stdout)
         --name,         -n      use this name for newly created personas
+
 ```
 
 It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
@@ -92,7 +96,7 @@ by the hashsum of their RSA keys:
 ```
 $ opmsg --newp --name stealth
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: creating new persona
 
@@ -157,6 +161,62 @@ The directory structure below `~/.opmsg` is easy and straight
 forward. It just maps the hex ids of the personas and DH keys
 to directories and can in fact be edited by hand.
 
+Creation of personas might take some time. Not just an RSA key
+is generated - which is not very time consuming - but also DH
+parameters (1024bit by default) that are used to implement PFS
+in later messenging (see later chapter).
+
+**Note:** *opmsg*s printing versions earlier than `opmsg: version=1.2` have had a weakness
+that left the personas RSA's (public) **e** value integrity-unprotected during `--import`.
+This could lallow attackers to mount MiM attacks that
+downgrade **e** to 1. Its recommended to update to the newest version, which
+correctly hashes the whole RSA pubkey and detects such tampering during `--import`. It is unlikely that such
+an attack goes unnoticed, as wrong message signatures would most likely be detected
+during operation, but if in doubt you can use the `rsa-check` script to check
+your local keystore to not contain any Exponent values of 1. In either case, update
+your *opmsg* to be on the safe side. As a bonus you would also get the new and
+shiny *aes-gcm* and *aes-ctr* cipher modes!
+
+
+Persona linking
+---------------
+
+Although this step is not strictly necessary, it is recommended. As personas are easily
+created, you can (should) create a dedicated persona for each of your "projects" or
+contacts. That is, if you have 7350 communication partners/peers, you should have
+created 7350 personas; one RSA key for each of them. To handle that easily with your
+mailer (see later for mutt integration), you should add a proper `--name`, describing your
+id. Additionally, you should `--link` your source persona (each of the 7350 you created)
+to the particular destination persona that you wish to communicate with using this source id:
+
+```
+$ opmsg --link b3c32d47dc8b58a6 --persona 1cb7992f96663853
+
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+
+opmsg: linking personas
+opmsg: SUCCESS.
+
+```
+
+This is to avoid the need to specify `--persona` each time you
+send a message to a different target persona, changing your local
+id back and forth inside the config file or at the command line.
+Above command says, that each time you send an opmsg to `b3c32d47dc8b58a6`,
+the keying material from your local id `1cb7992f96663853` is used. To unlink
+your id from `b3c32d47dc8b58a6`, remove the `srclink` file inside this personas
+directory.
+
+If no link is found for a persona, the config file and given
+`--persona` argument is evaluated. Command line arguments
+override the config file settings.
+
+Given proper mail provider support (e.g. inboxes are created on the fly
+for addresses like hexid@example.com), the global surveillance meta graph would
+just contain pairs of communication partners. No clusters, just islands
+of 1:1 mappings.
+
+
 Keys
 ----
 
@@ -203,7 +263,7 @@ my_hdr X-opmsg: version1
 
 set pgp_long_ids
 
-set pgp_list_pubring_command="/usr/local/bin/opmsg --listpgp --short"
+set pgp_list_pubring_command="/usr/local/bin/opmsg --listpgp --short --name %r"
 set pgp_encrypt_sign_command="/usr/local/bin/opmsg --encrypt %r -i %f"
 set pgp_encrypt_only_command="/usr/local/bin/opmsg --encrypt %r -i %f"
 set pgp_decrypt_command="/usr/local/bin/opmsg --decrypt -i %f"
@@ -221,7 +281,7 @@ Config file
 
 You need to setp up your local `~/.opmsg/config` to reflect
 the source persona you are using when sending your mail via _mutt_,
-unless you specify it via `-P` on the commandline:
+unless you specify it via `-P` on the commandline or used `--link`:
 
 
 ```
@@ -235,7 +295,7 @@ rsa_len = 4096
 # default
 dh_plen = 1024
 
-calgo = bfcfb
+calgo = aes128ctr
 ```
 
 However, any option could also be passed as a commandline argument to
@@ -247,22 +307,22 @@ Supported ciphers
 ```
 $ opmsg -C inv -D
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: Invalid crypto algorithm. Valid crypto algorithms are:
 
-opmsg: aes128cbc
+opmsg: aes128cbc (default)
 opmsg: aes128cfb
-opmsg: aes128ofb
+opmsg: aes128ctr
+opmsg: aes128gcm
 opmsg: aes256cbc
 opmsg: aes256cfb
-opmsg: aes256ofb
+opmsg: aes256ctr
+opmsg: aes256gcm
 opmsg: bfcbc
 opmsg: bfcfb
-opmsg: bfofb
 opmsg: cast5cbc
 opmsg: cast5cfb
-opmsg: cast5ofb
 opmsg: null
 
 opmsg: FAILED.
@@ -274,7 +334,7 @@ Examples
 ```
 $ opmsg --list --short
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: persona list:
 opmsg: Successfully loaded 1 personas.
@@ -287,7 +347,7 @@ Creating a detached signature for a file:
 $ echo foo>foo
 $ opmsg --sign -i foo --persona 1cb7992f96663853|tee -a foo.sign
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: detached file-signing by persona 1cb7992f96663853
 opmsg: SUCCESS.
@@ -312,14 +372,14 @@ $ sha256sum foo
 b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c  foo
 $ opmsg -V foo -i foo.sign
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: verifying detached file
 opmsg: GOOD signature and hash via persona 1cb7992f96663853 1d33e59e83cd0542 95fb8016e5d9e35f b409630694571aba
 opmsg: SUCCESS.
 $ opmsg -V foo -i foo.sign --short
 
-opmsg: version=1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: verifying detached file
 opmsg: GOOD signature and hash via persona 1cb7992f96663853
@@ -336,6 +396,6 @@ blob to download for everyone.
 This may be useful to defeat mail meta data collection. op-messages are
 self contained and ASCII-armored, so they could also be pasted to OTR,
 newsgroups, chats or paste-sites and picked up by the target persona from within
-a swarm.
+a swarm. Also see above discussion of persona linking.
 
 

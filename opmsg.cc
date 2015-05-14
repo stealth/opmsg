@@ -37,6 +37,7 @@
 
 extern "C" {
 #include <openssl/evp.h>
+#include <openssl/rand.h>
 }
 
 
@@ -48,6 +49,7 @@ enum {
 	ID_FORMAT_LONG		= 1,
 	ID_FORMAT_SPLIT		= 2,
 	NEWDHP			= 3,
+	LINK			= 4,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -58,7 +60,8 @@ enum {
 	CMODE_NEWDHP		= 0x2000,
 	CMODE_IMPORT		= 0x4000,
 	CMODE_LIST		= 0x8000,
-	CMODE_PGPLIST		= 0x10000
+	CMODE_PGPLIST		= 0x10000,
+	CMODE_LINK		= 0x20000
 };
 
 
@@ -67,7 +70,8 @@ void usage(const char *p)
 	cout<<"\nUsage: "<<p<<"\t[--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t\t[--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]"<<endl
-	    <<"\t\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl<<endl
+	    <<"\t\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
+	    <<"\t\t[--link target id]"<<endl<<endl
             <<"\t--confdir,\t-c\tdefaults to ~/.opmsg"<<endl
 	    <<"\t--rsa,\t\t-R\tRSA override (dont use existing DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, requires -P)"<<endl
@@ -82,6 +86,7 @@ void usage(const char *p)
 	    <<"\t--long\t\t\tlong view of hex ids"<<endl
 	    <<"\t--split\t\t\tsplit view of hex ids"<<endl
 	    <<"\t--newp,\t\t-N\tcreate new persona (should add --name)"<<endl
+	    <<"\t--link\t\t\tlink (your) --persona as default src to this target id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for a given -P (rarely needed)"<<endl
 	    <<"\t--calgo,\t-C\tuse this algo for encryption"<<endl
 	    <<"\t--phash,\t-p\tuse this hash algo for hashing personas"<<endl
@@ -261,6 +266,10 @@ int do_encrypt(const string &dst_id)
 			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
 			return -1;
 		}
+		// any default src linked to this target? override!
+		if (dst_p->linked_src().size() > 0)
+			config::my_id = dst_p->linked_src();
+
 		if (!(src_p = ks->find_persona(config::my_id))) {
 			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
 			return -1;
@@ -275,6 +284,10 @@ int do_encrypt(const string &dst_id)
 			cerr<<prefix<<"ERROR: "<<dst_persona->why()<<endl;
 			return -1;
 		}
+		// any default src linked to this target? override!
+		if (dst_p->linked_src().size() > 0)
+			config::my_id = dst_p->linked_src();
+
 		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(src_p = src_persona.get())) {
 			cerr<<prefix<<"ERROR: OOM\n";
@@ -393,8 +406,10 @@ int do_decrypt()
 		return -1;
 	}
 
-	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id())<<"\n";
-	cerr<<prefix<<"Imported "<<msg.dh_keys.size()<<" new DH keys.\n\n";
+	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
+	if (msg.get_srcname().size() > 0)
+		cerr<<" ("<<msg.get_srcname()<<")";
+	cerr<<endl<<prefix<<"Imported "<<msg.dh_keys.size()<<" new DH keys.\n\n";
 
 	if (write_msg(config::outfile, ctext) < 0) {
 		cerr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";
@@ -510,7 +525,7 @@ int do_newdhparams()
 }
 
 
-int do_list()
+int do_list(const string &name)
 {
 	keystore ks(config::phash, config::cfgbase);
 	if (ks.load() < 0) {
@@ -520,21 +535,24 @@ int do_list()
 	cerr<<prefix<<"Successfully loaded "<<ks.size()<<" personas.\n";
 	cerr<<prefix<<"(id)\t(name)\t(has-RSA-priv)\t(#DHkeys)\n";
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
-		cout<<prefix<<idformat(i->second->get_id())<<"\t"<<i->second->get_name()<< "\t";
-		cout<<i->second->can_sign()<<"\t"<<i->second->size()<<endl;
+		if (name.size() == 0 || i->second->get_name().find(name) != string::npos) {
+			cout<<prefix<<idformat(i->second->get_id())<<"\t"<<i->second->get_name()<< "\t";
+			cout<<i->second->can_sign()<<"\t"<<i->second->size()<<endl;
+		}
 	}
 	return 0;
 }
 
 
-int do_pgplist()
+int do_pgplist(const string &name)
 {
 	keystore ks(config::phash, config::cfgbase);
 	if (ks.load() < 0)
 		return -1;
 
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
-		cout<<"pub:u:1337:1:"<<idformat(i->second->get_id())<<":1::"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<"::eEsS\n";
+		if (name.size() == 0 || i->second->get_name().find(name) != string::npos)
+			cout<<"pub:u:1337:1:"<<idformat(i->second->get_id())<<":1::"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<"::eEsS\n";
 	}
 	return 0;
 }
@@ -568,6 +586,73 @@ int do_import(const string &name)
 }
 
 
+int do_link(const string &dst_id)
+{
+	persona *src_p = nullptr, *dst_p = nullptr;
+	unique_ptr<persona> src_persona(nullptr), dst_persona(nullptr);
+	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
+
+	if (!ks.get()) {
+		cerr<<prefix<<"ERROR: OOM\n";
+		return -1;
+	}
+
+	string link_id = config::my_id;
+
+	if (dst_id.size() == 16 || config::my_id.size() == 16) {
+		if (ks->load() < 0) {
+			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			return -1;
+		}
+		// do not use unique_ptr here, we dont have ownership
+		if (!(dst_p = ks->find_persona(dst_id))) {
+			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			return -1;
+		}
+		if (!(src_p = ks->find_persona(config::my_id))) {
+			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			return -1;
+		}
+		// take the long form
+		link_id = src_p->get_id();
+	} else {
+		dst_persona.reset(new (nothrow) persona(config::cfgbase, dst_id));
+		if (!(dst_p = dst_persona.get())) {
+			cerr<<prefix<<"ERROR: OOM\n";
+			return -1;
+		}
+		if (dst_p->load() < 0) {
+			cerr<<prefix<<"ERROR: "<<dst_persona->why()<<endl;
+			return -1;
+		}
+		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
+		if (!(src_p = src_persona.get())) {
+			cerr<<prefix<<"ERROR: OOM\n";
+			return -1;
+		}
+		if (src_p->load() < 0) {
+			cerr<<prefix<<"ERROR: "<<src_persona->why()<<endl;
+			return -1;
+		}
+	}
+
+	if (!src_p->can_sign()) {
+		cerr<<prefix<<"ERROR: "<<config::my_id<<" cannot be set as default-src because it lacks a private key.\n";
+		return -1;
+	}
+	if (!dst_p->can_encrypt()) {
+		cerr<<prefix<<"ERROR: Invalid target persona "<<dst_id<<endl;
+		return -1;
+	}
+
+	if (dst_p->link(link_id) < 0) {
+		cerr<<prefix<<"ERROR: "<<dst_p->why()<<endl;
+		return -1;
+	}
+	return 0;
+}
+
+
 void sig_int(int x)
 {
 	return;
@@ -596,12 +681,13 @@ int main(int argc, char **argv)
 	        {"calgo", required_argument, nullptr, 'C'},
 	        {"phash", required_argument, nullptr, 'p'},
 	        {"name", required_argument, nullptr, 'n'},
+	        {"link", required_argument, nullptr, LINK},
 	        {"in", required_argument, nullptr, 'i'},
 	        {"out", required_argument, nullptr, 'o'},
 	        {nullptr, 0, nullptr, 0}};
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
-	string detached_file = "", dst_id = "", verify_file = "", name = "";
+	string detached_file = "", dst_id = "", verify_file = "", name = "", link_src = "";
 
 	if (getenv("HOME")) {
 		config::cfgbase = getenv("HOME");
@@ -684,11 +770,15 @@ int main(int argc, char **argv)
 		case ID_FORMAT_SHORT:
 			config::idformat = "short";
 			break;
+		case LINK:
+			link_src = optarg;
+			cmode = CMODE_LINK;
+			break;
 		}
 	}
 
 	if (cmode != CMODE_PGPLIST)
-		cerr<<"\n"<<prefix<<"version=1.1 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+		cerr<<"\n"<<prefix<<"version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 	if (cmode == CMODE_INVALID)
 		usage(argv[0]);
@@ -708,6 +798,8 @@ int main(int argc, char **argv)
 	}
 
 	OpenSSL_add_all_algorithms();
+
+	RAND_load_file("/dev/urandom", 1024);
 
 	// clear error queue, since FIPS loading bugs might overlay our own errors
 	ERR_clear_error();
@@ -752,12 +844,16 @@ int main(int argc, char **argv)
 		cerr<<prefix<<"importing persona\n";
 		r = do_import(name);
 		break;
+	case CMODE_LINK:
+		cerr<<prefix<<"linking personas\n";
+		r = do_link(link_src);
+		break;
 	case CMODE_LIST:
 		cerr<<prefix<<"persona list:\n";
-		r = do_list();
+		r = do_list(name);
 		break;
 	case CMODE_PGPLIST:
-		r = do_pgplist();
+		r = do_pgplist(name);
 		break;
 	}
 

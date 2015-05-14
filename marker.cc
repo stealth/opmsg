@@ -29,6 +29,9 @@ using namespace std;
 string dh_begin = "-----BEGIN PUBLIC KEY-----\n";
 string dh_end = "-----END PUBLIC KEY-----\n";
 
+string rsa_pub_begin = "-----BEGIN PUBLIC KEY-----\n";
+string rsa_pub_end = "-----END PUBLIC KEY-----";		// note missing trailing \n
+
 string sig_begin = "-----BEGIN SIGNATURE-----\n";
 string sig_end = "-----END SIGNATURE-----\n";
 

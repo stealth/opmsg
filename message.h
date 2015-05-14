@@ -57,7 +57,7 @@ class message {
 
 	unsigned int version, max_new_dh_keys;
 
-	std::string sig, src_id_hex, dst_id_hex, kex_id_hex, pubkey_pem;
+	std::string sig, src_id_hex, dst_id_hex, kex_id_hex, pubkey_pem, src_name;
 	std::string phash, khash, shash, calgo;
 	std::string cfgbase, err;
 
@@ -87,7 +87,7 @@ public:
 
 	message(const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
 		: version(1), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
-	          pubkey_pem(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""),
+	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""),
 	          used_keys(0)
 	{
 	}
@@ -124,6 +124,11 @@ public:
 	void kex_id(const std::string &s)
 	{
 		kex_id_hex = s;
+	}
+
+	std::string get_srcname()
+	{
+		return src_name;
 	}
 
 	std::string get_shash()

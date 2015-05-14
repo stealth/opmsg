@@ -69,30 +69,26 @@ const EVP_CIPHER *algo2cipher(const string &s)
 		cipher = EVP_aes_128_cbc();
 	else if (s == "aes128cfb")
 		cipher = EVP_aes_128_cfb();
-	else if (s == "aes128ofb")
-		cipher = EVP_aes_128_ofb();
 	else if (s == "aes128gcm")
 		cipher = EVP_aes_128_gcm();
+	else if (s == "aes128ctr")
+		cipher = EVP_aes_128_ctr();
 	else if (s == "aes256cbc")
 		cipher = EVP_aes_256_cbc();
 	else if (s == "aes256cfb")
 		cipher = EVP_aes_256_cfb();
-	else if (s == "aes256ofb")
-		cipher = EVP_aes_256_ofb();
 	else if (s == "aes256gcm")
 		cipher = EVP_aes_256_gcm();
+	else if (s == "aes256ctr")
+		cipher = EVP_aes_256_ctr();
 	else if (s == "bfcbc")
 		cipher = EVP_bf_cbc();
 	else if (s == "bfcfb")
 		cipher = EVP_bf_cfb();
-	else if (s == "bfofb")
-		cipher = EVP_bf_ofb();
 	else if (s == "cast5cbc")
 		cipher = EVP_cast5_cbc();
 	else if (s == "cast5cfb")
 		cipher = EVP_cast5_cfb();
-	else if (s == "cast5ofb")
-		cipher = EVP_cast5_ofb();
 
 	return cipher;
 }
@@ -104,6 +100,8 @@ const EVP_MD *algo2md(const string &s)
 
 	if (s == "sha256")
 		md = EVP_sha256();
+	else if (s == "sha384")
+		md = EVP_sha384();
 	else if (s == "ripemd160")
 		md = EVP_ripemd160();
 
@@ -126,10 +124,10 @@ void print_calgos()
 {
 	extern const string prefix;
 	map<string, int> m{
-	        {"bfcfb", 0}, {"bfcbc", 0}, {"bfofb", 0},
-	        {"aes256ofb", 0}, {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 0},
-	        {"aes128ofb", 0}, {"aes128cfb", 0}, {"aes128cbc", 1}, {"aes128gcm", 0},
-	        {"cast5ofb", 0}, {"cast5cfb", 0}, {"cast5cbc", 0},
+	        {"bfcfb", 0}, {"bfcbc", 0},
+	        {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 0}, {"aes256ctr", 0},
+	        {"aes128cfb", 0}, {"aes128cbc", 1}, {"aes128gcm", 0}, {"aes128ctr", 0},
+	        {"cast5cfb", 0}, {"cast5cbc", 0},
 	        {"null", 0}
 	};
 
@@ -145,10 +143,10 @@ void print_calgos()
 bool is_valid_calgo(const string &s)
 {
 	map<string, int> m{
-	        {"bfcfb", 1}, {"bfcbc", 1}, {"bfofb", 1},
-	        {"aes256ofb", 1}, {"aes256cfb", 1}, {"aes256cbc", 1}, {"aes256gcm", 1},
-	        {"aes128ofb", 1}, {"aes128cfb", 1}, {"aes128cbc", 1}, {"aes128gcm", 1},
-	        {"cast5ofb", 1}, {"cast5cfb", 1}, {"cast5cbc", 1},
+	        {"bfcfb", 1}, {"bfcbc", 1},
+	        {"aes256cfb", 1}, {"aes256cbc", 1}, {"aes256gcm", 1}, {"aes256ctr", 1},
+	        {"aes128cfb", 1}, {"aes128cbc", 1}, {"aes128gcm", 1}, {"aes128ctr", 1},
+	        {"cast5cfb", 1}, {"cast5cbc", 1},
 	        {"null", 1}
 	};
 
@@ -159,7 +157,7 @@ bool is_valid_calgo(const string &s)
 bool is_valid_halgo(const string &s)
 {
 	map<string, int> m{
-	        {"sha256", 1}, {"sha512", 1}, {"ripemd160", 1}
+	        {"sha256", 1}, {"sha384", 1}, {"sha512", 1}, {"ripemd160", 1}
 	};
 
 	return m.count(s) > 0;

@@ -358,7 +358,7 @@ int message::decrypt(string &raw)
 
 	// next must come "version=1", nuke it
 	if ((pos = raw.find(marker::version)) != 0)
-		return build_error("decrypt: Not in OPMSGv1 format. Maybe need to update opmsg? (2).", -1);
+		return build_error("decrypt: Not in OPMSGv1 format (2). Need to update opmsg?", -1);
 	raw.erase(0, pos + marker::version.size());
 
 	// nuke OPMSg trailer, its also not part of signing. Do not accept junk after
@@ -396,7 +396,7 @@ int message::decrypt(string &raw)
 
 	phash = b[0]; khash = b[1]; shash = b[2]; calgo = b[3];
 	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
-		return build_error("decrypt: Not in OPMSGv1 format (8).", -1);
+		return build_error("decrypt: Not in OPMSGv1 format (8). Invalid algo name. Need to update opmsg?", -1);
 
 	// IV are 24byte encoded as b64 == 32byte
 	b64_decode(reinterpret_cast<char *>(b[4]), 32, iv_kdf);
@@ -456,6 +456,7 @@ int message::decrypt(string &raw)
 	// at this point, the message is valid authenticated by src_id
 	//
 
+	src_name = src_persona->get_name();
 
 	// new dh keys included for later DH kex?
 	string newdh = "";
@@ -632,6 +633,7 @@ int message::decrypt(string &raw)
 
 	EVP_CIPHER_CTX_cleanup(&c_ctx);
 	raw = plaintext;
+	plaintext.clear();
 
 	if (has_dh_key && used_keys)
 		dst_persona->used_key(kex_id_hex, 1);

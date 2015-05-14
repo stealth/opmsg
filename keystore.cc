@@ -69,7 +69,7 @@ static int mkdir_helper(const string &base, string &result)
 }
 
 
-static int bn2hex(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
+static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 {
 	result = "";
 
@@ -100,12 +100,56 @@ static int bn2hex(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 }
 
 
+static int rsa_normalize_and_hexhash(const EVP_MD *mdtype, string &rsa, string &result)
+{
+	result = "";
+
+	unsigned char h[EVP_MAX_MD_SIZE];
+	unsigned int hlen = 0;
+	memset(h, 0, sizeof(h));
+
+	string::size_type start = string::npos, end = string::npos;
+
+	// sanitize checking, and put keyblob in a uniform format
+	if ((start = rsa.find(marker::rsa_pub_begin)) == string::npos)
+		return -1;
+	if (start > 0)
+		rsa.erase(0, start);
+	// dont allow more than one key in keyblob
+	if (rsa.find(marker::rsa_pub_begin, marker::rsa_pub_begin.size()) != string::npos)
+		return -1;
+	if ((end = rsa.find(marker::rsa_pub_end)) == string::npos)
+		return -1;
+	rsa.erase(end + marker::rsa_pub_end.size());
+
+	// one single newline after we truncated anything after end-marker which does not contain \n
+	rsa += "\n";
+
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
+	if (!md_ctx.get())
+		return -1;
+	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
+		return -1;
+	if (EVP_DigestUpdate(md_ctx.get(), rsa.c_str(), rsa.size()) != 1)
+		return -1;
+	if (EVP_DigestFinal_ex(md_ctx.get(), h, &hlen) != 1)
+		return -1;
+
+	// now this creates a hash that can be re-checked via e.g. sha256sum rsa.pub.pem inside keystore
+
+	blob2hex(string(reinterpret_cast<char *>(h), hlen), result);
+	return 0;
+}
+
+
 static int key_cb(int a1, int a2, BN_GENCB *a3)
 {
-	if (a1 == 2)
+	if (a1 == 1)
 		fprintf(stderr, "o");
-	else if (a1 == 3)
+	else if (a1 == 2)
 		fprintf(stderr, "O");
+	else if (a1 == 3)
+		fprintf(stderr, "+");
 	else
 		fprintf(stderr, ".");
 	return 1;
@@ -243,9 +287,15 @@ persona *keystore::find_persona(const std::string &hex)
 
 
 // new persona
-persona *keystore::add_persona(const string &name, const string &rsa_pub_pem, const string &rsa_priv_pem, const string &dhparams_pem)
+persona *keystore::add_persona(const string &name, const string &c_rsa_pub_pem, const string &rsa_priv_pem, const string &dhparams_pem)
 {
 	int fd = -1;
+
+	// create hash (hex view) of public RSA part and use as a reference
+	string hex = "";
+	string rsa_pub_pem = c_rsa_pub_pem;
+	if (rsa_normalize_and_hexhash(md, rsa_pub_pem, hex) < 0)
+		return build_error("add_persona: Invalid RSA pubkey blob. Missing BEGIN/END markers?", nullptr);
 
 	string tmpdir;
 	if (mkdir_helper(cfgbase, tmpdir) < 0)
@@ -298,11 +348,6 @@ persona *keystore::add_persona(const string &name, const string &rsa_pub_pem, co
 			return build_error("add_persona::EVP_PKEY_get1_RSA: Error reading RSA key", nullptr);
 	}
 
-
-	// create hash (hex view) of public RSA modulus and use as a reference
-	string hex = "";
-	if (bn2hex(md, rpub->n, hex) < 0)
-		return build_error("add_persona: Error hashing RSA pubkey", nullptr);
 	string hexdir = cfgbase + "/" + hex;
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		int saved_errno = errno;
@@ -479,6 +524,21 @@ int persona::load(const std::string &dh_hex)
 				s[slen - 1] = 0;
 		}
 		name = string(s);
+	}
+
+	// load default linked src, if any
+	file = dir + "/srclink";
+	f.reset(fopen(file.c_str(), "r"));
+	if (f.get()) {
+		char s[512];
+		memset(s, 0, sizeof(s));
+		fgets(s, sizeof(s) - 1, f.get());
+		size_t slen = strlen(s);
+		if (slen > 0) {
+			if (s[slen - 1] == '\n')
+				s[slen - 1] = 0;
+		}
+		link_src = string(s);
 	}
 
 	// load RSA keys
@@ -679,8 +739,8 @@ DHbox *persona::gen_dh_key(const EVP_MD *md)
 		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + id, nullptr);
 
 	string hex = "";
-	if (bn2hex(md, dh1->pub_key, hex) < 0)
-		return build_error("gen_dh_key::bn2hex: Error hashing DH key.", nullptr);
+	if (bn2hexhash(md, dh1->pub_key, hex) < 0)
+		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", nullptr);
 
 	// that case would be really weird...
 	if (keys.count(hex) > 0)
@@ -800,8 +860,8 @@ DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 		return build_error("add_dh_key::EVP_PKEY_get1_DY: Invalid PEM pubkey", nullptr);
 
 	string hex = "";
-	if (bn2hex(md, dh->pub_key, hex) < 0)
-		return build_error("add_dh_key::bn2hex: Error hashing DH pubkey.", nullptr);
+	if (bn2hexhash(md, dh->pub_key, hex) < 0)
+		return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", nullptr);
 
 	// some remote persona tries to import a key twice?
 	if (keys.count(hex) > 0) {
@@ -871,6 +931,25 @@ int persona::del_dh_pub(const string &hex)
 		i->second->pub_pem = "";
 		DH_free(i->second->pub); i->second->pub = nullptr;
 	}
+	return 0;
+}
+
+
+int persona::link(const string &hex)
+{
+	if (!is_hex_hash(hex))
+		return build_error("link: Invalid src id.", -1);
+
+	string file = cfgbase + "/" + id + "/srclink";
+
+	int fd = open(file.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600);
+	if (fd >= 0) {
+		write(fd, hex.c_str(), hex.size());
+		write(fd, "\n", 1);
+		close(fd);
+	} else
+		return build_error("link: ", -1);
+
 	return 0;
 }
 

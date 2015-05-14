@@ -82,9 +82,9 @@ int parse_config(const string &cfgbase)
 			config::idformat = "short";
 		else if (sline.find("idformat=split") == 0)
 			config::idformat = "split";
-		else if (sline.find("my_id=") == 0) {
+		else if (sline.find("my_id=") == 0)
 			config::my_id = sline.substr(6);
-		} else if (sline.find("calgo=") == 0)
+		else if (sline.find("calgo=") == 0)
 			config::calgo = sline.substr(6);
 		else if (sline.find("phash=") == 0)
 			config::phash = sline.substr(6);

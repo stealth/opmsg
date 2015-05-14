@@ -119,7 +119,7 @@ public:
 
 class persona {
 
-	std::string id, name;
+	std::string id, name, link_src;
 	std::map<std::string, DHbox *> keys;
 
 	RSAbox *rsa;
@@ -147,7 +147,7 @@ class persona {
 public:
 
 	persona(const std::string &dir, const std::string &hash, const std::string &n = "")
-		: id(hash), name(n), rsa(nullptr), dh_params(nullptr), cfgbase(dir), err("")
+		: id(hash), name(n), link_src(""), rsa(nullptr), dh_params(nullptr), cfgbase(dir), err("")
 	{
 		if (!is_hex_hash(id))
 			id = "dead";
@@ -195,6 +195,11 @@ public:
 		return name;
 	}
 
+	std::string linked_src()
+	{
+		return link_src;
+	}
+
 	DHbox *new_dh_params();
 
 	DHbox *new_dh_params(const std::string &pem);
@@ -218,6 +223,8 @@ public:
 	void used_key(const std::string &hex, bool);
 
 	int load(const std::string &hex = "");
+
+	int link(const std::string &hex);
 
 	std::map<std::string, DHbox *>::iterator first_key();
 
