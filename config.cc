@@ -30,7 +30,7 @@ namespace opmsg {
 
 namespace config {
 
-int dh_plen = 1024;
+int dh_plen = 2048;
 
 int rsa_len = 4096;
 
@@ -101,8 +101,8 @@ int parse_config(const string &cfgbase)
 				config::rsa_len = 4096;
 		} else if (sline.find("dh_plen=") == 0) {
 			config::dh_plen = strtoul(sline.substr(8).c_str(), nullptr, 0);
-			if (config::dh_plen < 512 || config::dh_plen > 8192)
-				config::dh_plen = 1024;
+			if (config::dh_plen < 1024 || config::dh_plen > 16000)
+				config::dh_plen = 2048;
 		} else if (sline.find("new_dh_keys=") == 0) {
 			config::new_dh_keys = strtoul(sline.substr(12).c_str(), nullptr, 0);
 			if (config::new_dh_keys < 0 || config::new_dh_keys > 100)

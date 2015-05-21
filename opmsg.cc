@@ -799,7 +799,7 @@ int main(int argc, char **argv)
 
 	OpenSSL_add_all_algorithms();
 
-	RAND_load_file("/dev/urandom", 1024);
+	RAND_load_file("/dev/urandom", 2048);
 
 	// clear error queue, since FIPS loading bugs might overlay our own errors
 	ERR_clear_error();
@@ -833,7 +833,7 @@ int main(int argc, char **argv)
 		r = do_verify(verify_file);
 		break;
 	case CMODE_NEWP:
-		cerr<<prefix<<"creating new persona\n\n";
+		cerr<<prefix<<"creating new persona (RSA "<<config::rsa_len<<", DH "<<config::dh_plen<<")\n\n";
 		r = do_newpersona(name);
 		break;
 	case CMODE_NEWDHP:

@@ -132,7 +132,7 @@ opmsg --import --phash sha256 --name stealth
 just as hinted above.
 
 _opmsg_ does not rely on a web-of-trust which in fact never really
-worked. Rather, due to ubicious messenging, its much simpler today
+worked. Rather, due to ubiquious messenging, its much simpler today
 to verify the hashsum of the persona via **additional** communication
 paths. E.g. if you send the pubkey via plain mail, use SMS **and** twitter
 to distribute the hash, or send a picture/selfie with the hash
