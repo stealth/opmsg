@@ -20,7 +20,9 @@
 
 #include <iostream>
 #include <memory>
+#include <string>
 #include <cstdio>
+#include <cstring>
 #include <fcntl.h>
 #include <unistd.h>
 #include <getopt.h>
@@ -65,14 +67,19 @@ enum {
 };
 
 
+const string banner = "\nopmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+
+
 void usage(const char *p)
 {
+	cerr<<banner;
+
 	cout<<"\nUsage: "<<p<<"\t[--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t\t[--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]"<<endl
 	    <<"\t\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
 	    <<"\t\t[--link target id]"<<endl<<endl
-            <<"\t--confdir,\t-c\tdefaults to ~/.opmsg"<<endl
+            <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--rsa,\t\t-R\tRSA override (dont use existing DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, requires -P)"<<endl
 	    <<"\t--decrypt,\t-D\tdecrypt --in to --out"<<endl
@@ -696,6 +703,16 @@ int main(int argc, char **argv)
 
 	setbuffer(stdout, nullptr, 0);
 
+	if (argc == 1)
+		usage(argv[0]);
+
+	// first, try to find out any --config option
+	if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "--config") == 0) {
+		if (!argv[2])
+			usage(argv[0]);
+		config::cfgbase = argv[2];
+	}
+
 	mkdir(config::cfgbase.c_str(), 0700);
 	parse_config(config::cfgbase);
 
@@ -704,12 +721,10 @@ int main(int argc, char **argv)
 	sa.sa_handler = sig_int;
 	sigaction(SIGINT, &sa, nullptr);
 
-
-
-	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts,&opt_idx)) != -1) {
+	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
 		switch (c) {
 		case 'c':
-			config::cfgbase = optarg;
+			// was already handled
 			break;
 		case 'i':
 			config::infile = optarg;
@@ -777,11 +792,11 @@ int main(int argc, char **argv)
 		}
 	}
 
-	if (cmode != CMODE_PGPLIST)
-		cerr<<"\n"<<prefix<<"version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
-
 	if (cmode == CMODE_INVALID)
 		usage(argv[0]);
+
+	if (cmode != CMODE_PGPLIST)
+		cerr<<banner;
 
 	if (!is_valid_halgo(config::phash)) {
 		cerr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";
