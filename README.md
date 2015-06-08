@@ -162,7 +162,7 @@ to directories and can in fact be edited by hand.
 
 Creation of personas might take some time. Not just an RSA key
 is generated - which is not very time consuming - but also DH
-parameters (1024bit by default) that are used to implement PFS
+parameters (2048bit by default) that are used to implement PFS
 in later messenging (see later chapter).
 
 **Note:** *opmsg*s printing versions earlier than `opmsg: version=1.2` have had a weakness
