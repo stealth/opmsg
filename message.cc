@@ -635,8 +635,14 @@ int message::decrypt(string &raw)
 	raw = plaintext;
 	plaintext.clear();
 
-	if (has_dh_key && used_keys)
-		dst_persona->used_key(kex_id_hex, 1);
+	if (has_dh_key) {
+		if (burn_keys) {
+			dst_persona->del_dh_priv(kex_id_hex);
+			dst_persona->del_dh_pub(kex_id_hex);
+			dst_persona->del_dh_id(kex_id_hex);
+		} else if (used_keys)
+			dst_persona->used_key(kex_id_hex, 1);
+	}
 	return 0;
 }
 

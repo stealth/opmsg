@@ -50,6 +50,8 @@ std::string outfile = "/dev/stdout";
 std::string idformat = "split";
 std::string my_id = "";
 
+bool burn = 0;
+
 std::string cfgbase = ".opmsg";
 
 }
@@ -109,6 +111,8 @@ int parse_config(const string &cfgbase)
 				config::new_dh_keys = 3;
 		} else if (sline == "rsa_override")
 			config::rsa_override = 1;
+		else if (sline == "burn")
+			config::burn = 1;
 	}
 	return 0;
 }

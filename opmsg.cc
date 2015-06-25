@@ -53,6 +53,7 @@ enum {
 	ID_FORMAT_SPLIT		= 2,
 	NEWDHP			= 3,
 	LINK			= 4,
+	BURN			= 5,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -68,7 +69,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.3 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 
 void usage(const char *p)
@@ -79,13 +80,13 @@ void usage(const char *p)
 	    <<"\t\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t\t[--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]"<<endl
 	    <<"\t\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
-	    <<"\t\t[--link target id]"<<endl<<endl
+	    <<"\t\t[--link target id] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--rsa,\t\t-R\tRSA override (dont use existing DH keys)"<<endl
-	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, requires -P)"<<endl
+	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
 	    <<"\t--decrypt,\t-D\tdecrypt --in to --out"<<endl
 	    <<"\t--sign,\t\t-S\tcreate detached signature file from -i via -P"<<endl
-	    <<"\t--verify,\t-V\tverify hash contained in detached file against -i"<<endl
+	    <<"\t--verify,\t-V\tvrfy hash contained in detached file against -i"<<endl
 	    <<"\t--persona,\t-P\tyour persona hex id as used for signing"<<endl
 	    <<"\t--import,\t-I\timport new persona from --in"<<endl
 	    <<"\t--list,\t\t-l\tlist all personas"<<endl
@@ -94,13 +95,16 @@ void usage(const char *p)
 	    <<"\t--long\t\t\tlong view of hex ids"<<endl
 	    <<"\t--split\t\t\tsplit view of hex ids"<<endl
 	    <<"\t--newp,\t\t-N\tcreate new persona (should add --name)"<<endl
-	    <<"\t--link\t\t\tlink (your) --persona as default src to this target id"<<endl
-	    <<"\t--newdhp\t\tcreate new DHparams for a given -P (rarely needed)"<<endl
+	    <<"\t--link\t\t\tlink (your) --persona as default src to this"<<endl
+	    <<"\t\t\t\ttarget id"<<endl
+	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
 	    <<"\t--calgo,\t-C\tuse this algo for encryption"<<endl
 	    <<"\t--phash,\t-p\tuse this hash algo for hashing personas"<<endl
 	    <<"\t--in,\t\t-i\tinput file (stdin)"<<endl
 	    <<"\t--out,\t\t-o\toutput file (stdout)"<<endl
-	    <<"\t--name,\t\t-n\tuse this name for newly created personas"<<endl<<endl;
+	    <<"\t--name,\t\t-n\tuse this name for newly created personas"<<endl
+	    <<"\t--burn\t\t\t(!dangerous!) burn private DH key after"<<endl
+	    <<"\t\t\t\tdecryption to achieve 'full' PFS"<<endl<<endl;
 
 	exit(-1);
 }
@@ -332,6 +336,8 @@ int do_encrypt(const string &dst_id)
 				break;
 			}
 		}
+		if (kex_id == marker::rsa_kex_id)
+			cerr<<prefix<<"warn: Out of DH keys for target persona. Using RSA fallback.\n";
 	}
 
 	// rsa marker in case no DH key was found
@@ -408,6 +414,9 @@ int do_decrypt()
 
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 	msg.mark_used_keys(1);
+
+	if (config::burn)
+		msg.burn_used_keys(1);
 
 	if (msg.decrypt(ctext) < 0) {
 		cerr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
@@ -690,6 +699,7 @@ int main(int argc, char **argv)
 	        {"phash", required_argument, nullptr, 'p'},
 	        {"name", required_argument, nullptr, 'n'},
 	        {"link", required_argument, nullptr, LINK},
+	        {"burn", no_argument, nullptr, BURN},
 	        {"in", required_argument, nullptr, 'i'},
 	        {"out", required_argument, nullptr, 'o'},
 	        {nullptr, 0, nullptr, 0}};
@@ -789,6 +799,9 @@ int main(int argc, char **argv)
 		case LINK:
 			link_src = optarg;
 			cmode = CMODE_LINK;
+			break;
+		case BURN:
+			config::burn = 1;
 			break;
 		}
 	}

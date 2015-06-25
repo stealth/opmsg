@@ -909,7 +909,27 @@ int persona::del_dh_priv(const string &hex)
 		return build_error("del_dh_priv: Invalid key id.", -1);
 
 	string file = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
+	string used = cfgbase + "/" + id + "/" + hex + "/used";
+
+	struct stat st;
+	if (stat(file.c_str(), &st) < 0)
+		return build_error("del_dh_priv: Invalid keyfile.", -1);
+
+	int fd = open(file.c_str(), O_RDWR);
+	if (fd < 0)
+		return build_error("del_dh_priv: Unable to open keyfile for shredding.", -1);
+
+	char buf[512];
+	memset(buf, 0, sizeof(buf));
+	for (off_t i = 0; i < st.st_size; i += sizeof(buf)) {
+		write(fd, buf, sizeof(buf));
+		sync();
+	}
+	close(fd);
+
 	unlink(file.c_str());
+	unlink(used.c_str());
+
 	auto i = keys.find(hex);
 	if (i != keys.end()) {
 		i->second->priv_pem = "";

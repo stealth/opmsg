@@ -33,6 +33,8 @@ extern std::string rsa_e;
 extern std::string infile, outfile, calgo, idformat, my_id;
 extern std::string phash, shash, khash, cfgbase;
 
+extern bool burn;
+
 }
 
 int parse_config(const std::string &);
