@@ -398,6 +398,8 @@ int message::decrypt(string &raw)
 	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
 		return build_error("decrypt: Not in OPMSGv1 format (8). Invalid algo name. Need to update opmsg?", -1);
 
+	bool has_aad = (calgo.find("gcm") != string::npos);
+
 	// IV are 24byte encoded as b64 == 32byte
 	b64_decode(reinterpret_cast<char *>(b[4]), 32, iv_kdf);
 	if (iv_kdf.size() < sizeof(iv))
@@ -405,7 +407,7 @@ int message::decrypt(string &raw)
 	memcpy(iv, iv_kdf.c_str(), sizeof(iv));
 
 	// get AAD tag if any (only required by GCM mode ciphers)
-	if ((pos = raw.find(marker::aad_tag)) != string::npos) {
+	if (has_aad && (pos = raw.find(marker::aad_tag)) != string::npos) {
 		pos += marker::aad_tag.size();
 		if ((nl = raw.find("\n", pos)) == string::npos) {
 			return build_error("decrypt: Error finding end of AAD tag.", -1);
@@ -485,8 +487,6 @@ int message::decrypt(string &raw)
 		raw.erase(0, pos + marker::opmsg_databegin.size());
 		return 0;
 	}
-
-	bool has_aad = (calgo.find("gcm") != string::npos);
 
 	// kex id
 	if ((pos = raw.find(marker::kex_id)) == string::npos)
