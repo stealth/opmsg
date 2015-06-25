@@ -292,9 +292,15 @@ my_id = 1cb7992f966638531d33e59e83cd054295fb8016e5d9e35fb409630694571aba
 rsa_len = 4096
 
 # default
-dh_plen = 1024
+dh_plen = 2048
 
 calgo = aes128ctr
+
+# split (default), long, short
+idformat = short
+
+# number of new DH keys attached to msg, default is 3
+new_dh_keys = 3
 ```
 
 However, any option could also be passed as a commandline argument to
