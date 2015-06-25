@@ -415,9 +415,6 @@ int do_decrypt()
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 	msg.mark_used_keys(1);
 
-	if (config::burn)
-		msg.burn_used_keys(1);
-
 	if (msg.decrypt(ctext) < 0) {
 		cerr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
 		return -1;
@@ -436,6 +433,14 @@ int do_decrypt()
 		return -1;
 	}
 
+	// only burn keys after everything else was a success, including
+	// writing of plaintext message
+	if (config::burn) {
+		persona p(config::cfgbase, msg.dst_id());
+		p.del_dh_priv(msg.kex_id());
+		p.del_dh_pub(msg.kex_id());
+		p.del_dh_id(msg.kex_id());
+	}
 	return 0;
 }
 

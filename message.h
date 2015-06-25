@@ -61,7 +61,7 @@ class message {
 	std::string phash, khash, shash, calgo;
 	std::string cfgbase, err;
 
-	bool used_keys, burn_keys;
+	bool used_keys;
 
 	template<class T>
 	T build_error(const std::string &msg, T r)
@@ -88,7 +88,7 @@ public:
 	message(const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
 		: version(1), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
 	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""),
-	          used_keys(0), burn_keys(0)
+	          used_keys(0)
 	{
 	}
 
@@ -144,11 +144,6 @@ public:
 	void mark_used_keys(bool m)
 	{
 		used_keys = m;
-	}
-
-	void burn_used_keys(bool b)
-	{
-		burn_keys = b;
 	}
 
 	int decrypt(std::string &msg);
