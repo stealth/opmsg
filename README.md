@@ -177,8 +177,8 @@ your *opmsg* to be on the safe side. As a bonus you would also get the new and
 shiny *aes-gcm* and *aes-ctr* cipher modes!
 
 
-Persona linking
----------------
+Persona linking - if required
+-----------------------------
 
 Although this step is not strictly necessary, it is recommended. As personas are easily
 created, you can (should) create a dedicated persona for each of your "projects" or
@@ -249,6 +249,10 @@ throw away `used` keys. After all _opmsg_ is not a crypto container
 or a replacement for FDE (which is recommended anyway). _opmsg_ is
 about to protect your messages in transit, not on disk.
 
+As of `version=1.3` there is a `--burn` option that nukes used DH
+keys from storage. Be aware: you can only decrypt the message once.
+Once the message is successfully decrypted, the DH key that was used
+is overwritten and deleted from storage.
 
 
 mutt integration
@@ -262,7 +266,13 @@ my_hdr X-opmsg: version1
 
 set pgp_long_ids
 
+# use this listing mode if the 'name' aliases are a substring of the email address
+# to avoid huge listings
 set pgp_list_pubring_command="/usr/local/bin/opmsg --listpgp --short --name %r"
+
+# otherwise, skip the --name option to list all personas
+#set pgp_list_pubring_command="/usr/local/bin/opmsg --listpgp --short"
+
 set pgp_encrypt_sign_command="/usr/local/bin/opmsg --encrypt %r -i %f"
 set pgp_encrypt_only_command="/usr/local/bin/opmsg --encrypt %r -i %f"
 set pgp_decrypt_command="/usr/local/bin/opmsg --decrypt -i %f"
