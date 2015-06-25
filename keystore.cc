@@ -288,14 +288,14 @@ persona *keystore::find_persona(const std::string &hex)
 
 
 // new persona
-persona *keystore::add_persona(const string &name, const string &c_rsa_pub_pem, const string &rsa_priv_pem, const string &dhparams_pem)
+persona *keystore::add_persona(const string &name, const string &c_pub_pem, const string &priv_pem, const string &dhparams_pem)
 {
 	int fd = -1;
 
 	// create hash (hex view) of public RSA part and use as a reference
 	string hex = "";
-	string rsa_pub_pem = c_rsa_pub_pem;
-	if (rsa_normalize_and_hexhash(md, rsa_pub_pem, hex) < 0)
+	string pub_pem = c_pub_pem;
+	if (rsa_normalize_and_hexhash(md, pub_pem, hex) < 0)
 		return build_error("add_persona: Invalid RSA pubkey blob. Missing BEGIN/END markers?", nullptr);
 
 	string tmpdir;
@@ -311,42 +311,36 @@ persona *keystore::add_persona(const string &name, const string &c_rsa_pub_pem, 
 		close(fd);
 	}
 
-	unique_ptr<RSA, RSA_del> rpub(nullptr, RSA_free), rpriv(nullptr, RSA_free);
-
-	if (rsa_pub_pem.size() > 0) {
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(nullptr, EVP_PKEY_free);
+	if (pub_pem.size() > 0) {
 		string rfile = tmpdir + "/rsa.pub.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
-		write(fd, rsa_pub_pem.c_str(), rsa_pub_pem.size());
+		write(fd, pub_pem.c_str(), pub_pem.size());
 		close(fd);
 
 		unique_ptr<FILE, FILE_del> f(fopen(rfile.c_str(), "r"), ffclose);
 		if (!f.get())
 			 return build_error("add_persona::fopen:", nullptr);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-		if (!evp.get())
-			return build_error("add_persona::PEM_read_PUBKEY: Error reading RSA key", nullptr);
-		rpub.reset(EVP_PKEY_get1_RSA(evp.get()));
-		if (!rpub.get())
-			return build_error("add_persona::EVP_PKEY_get1_RSA: Error reading RSA key", nullptr);
+		evp_pub.reset(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr));
+		if (!evp_pub.get())
+			return build_error("add_persona::PEM_read_PUBKEY: Error reading PEM key", nullptr);
 	}
 
-	if (rsa_priv_pem.size() > 0) {
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
+	if (priv_pem.size() > 0) {
 		string rfile = tmpdir + "/rsa.priv.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
-		write(fd, rsa_priv_pem.c_str(), rsa_priv_pem.size());
+		write(fd, priv_pem.c_str(), priv_pem.size());
 		close(fd);
 
 		unique_ptr<FILE, FILE_del> f(fopen(rfile.c_str(), "r"), ffclose);
 		if (!f.get())
 			return build_error("add_persona::fopen:", nullptr);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-		if (!evp.get())
-			return build_error("add_persona::PEM_read_PrivateKey: Error reading RSA key", nullptr);
-		rpriv.reset(EVP_PKEY_get1_RSA(evp.get()));
-		if (!rpriv.get())
-			return build_error("add_persona::EVP_PKEY_get1_RSA: Error reading RSA key", nullptr);
+		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
+		if (!evp_priv.get())
+			return build_error("add_persona::PEM_read_PrivateKey: Error reading PEM key", nullptr);
 	}
 
 	string hexdir = cfgbase + "/" + hex;
@@ -364,9 +358,9 @@ persona *keystore::add_persona(const string &name, const string &c_rsa_pub_pem, 
 	if (!p.get())
 		return build_error("add_persona::OOM", nullptr);
 
-	p->set_rsa(rpub.release(), rpriv.release());
-	p->rsa->pub_pem = rsa_pub_pem;
-	p->rsa->priv_pem = rsa_priv_pem;
+	p->set_pkey(evp_pub.release(), evp_priv.release());
+	p->pkey->pub_pem = pub_pem;
+	p->pkey->priv_pem = priv_pem;
 
 	if (dhparams_pem.size() > 0) {
 		if (dhparams_pem == "new") {
@@ -376,7 +370,7 @@ persona *keystore::add_persona(const string &name, const string &c_rsa_pub_pem, 
 			return build_error(p->why(), nullptr);
 	}
 
-	// do not free RSA structs and persona
+	// do not free evp_ structs and persona
 	personas[hex] = p.get();
 	return p.release();
 }
@@ -543,7 +537,6 @@ int persona::load(const std::string &dh_hex)
 	}
 
 	// load RSA keys
-	RSA *rpub = nullptr, *rpriv = nullptr;
 	string pub_pem = "", priv_pem = "";
 
 	file = dir + "/rsa.pub.pem";
@@ -551,33 +544,30 @@ int persona::load(const std::string &dh_hex)
 	if (!f.get())
 		return build_error("load: Error reading public RSA file for " + id, -1);
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp.get())
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+	if (!evp_pub.get())
 		return build_error("load::PEM_read_PUBKEY: Error reading public RSA file for " + id, -1);
 	rewind(f.get());
-	if (!(rpub = EVP_PKEY_get1_RSA(evp.get())))
-		return build_error("load::EVP_PKEY_get1_RSA:", -1);
 	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 		return build_error("load::fread:", -1);
 	pub_pem = string(buf, r);
 
 	file = dir + "/rsa.priv.pem";
 	f.reset(fopen(file.c_str(), "r"));
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
 	if (f.get()) {
-		evp.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
-		if (!evp.get())
+		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
+		if (!evp_priv.get())
 			return build_error("load::PEM_read_PrivateKey: Error reading private RSA file for " + id, -1);
 		rewind(f.get());
-		if (!(rpriv = EVP_PKEY_get1_RSA(evp.get())))
-			return build_error("load::EVP_PKEY_get1_RSA:", -1);
 		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 			return build_error("load::fread:", -1);
 		priv_pem = string(buf, r);
 	}
 
-	set_rsa(rpub, rpriv);
-	rsa->pub_pem = pub_pem;
-	rsa->priv_pem = priv_pem;
+	set_pkey(evp_pub.release(), evp_priv.release());
+	pkey->pub_pem = pub_pem;
+	pkey->priv_pem = priv_pem;
 
 	// load DH params if avail
 	file = dir + "/dhparams.pem";
@@ -620,12 +610,12 @@ int persona::load(const std::string &dh_hex)
 }
 
 
-RSAbox *persona::set_rsa(RSA *pub, RSA *priv)
+PKEYbox *persona::set_pkey(EVP_PKEY *pub, EVP_PKEY *priv)
 {
-	if (rsa)
-		delete rsa;
-	rsa = new (nothrow) RSAbox(pub, priv);
-	return rsa;
+	if (pkey)
+		delete pkey;
+	pkey = new (nothrow) PKEYbox(pub, priv);
+	return pkey;
 }
 
 

@@ -85,6 +85,45 @@ public:
 };
 
 
+class PKEYbox {
+
+public:
+
+	EVP_PKEY *pub, *priv;
+
+	std::string pub_pem, priv_pem, hex;
+
+
+	PKEYbox(EVP_PKEY *p, EVP_PKEY *s)
+		: pub(p), priv(s), pub_pem(""), priv_pem(""), hex("")
+	{
+	}
+
+	virtual ~PKEYbox()
+	{
+		if (pub)
+			EVP_PKEY_free(pub);
+		if (priv)
+			EVP_PKEY_free(priv);
+	}
+
+	bool can_sign()
+	{
+		return priv != nullptr;
+	}
+
+	bool can_decrypt()
+	{
+		return priv != nullptr;
+	}
+
+	bool can_encrypt()
+	{
+		return pub != nullptr;
+	}
+};
+
+
 class DHbox {
 
 public:
@@ -122,7 +161,7 @@ class persona {
 	std::string id, name, link_src;
 	std::map<std::string, DHbox *> keys;
 
-	RSAbox *rsa;
+	PKEYbox *pkey;
 	DHbox *dh_params;
 
 	std::string cfgbase, err;
@@ -147,7 +186,7 @@ class persona {
 public:
 
 	persona(const std::string &dir, const std::string &hash, const std::string &n = "")
-		: id(hash), name(n), link_src(""), rsa(nullptr), dh_params(nullptr), cfgbase(dir), err("")
+		: id(hash), name(n), link_src(""), pkey(nullptr), dh_params(nullptr), cfgbase(dir), err("")
 	{
 		if (!is_hex_hash(id))
 			id = "dead";
@@ -159,18 +198,28 @@ public:
 			if (i->second)
 				delete i->second;
 		}
-		delete rsa;
+		delete pkey;
 		delete dh_params;
+	}
+
+	bool can_verify()
+	{
+		return can_encrypt();
 	}
 
 	bool can_encrypt()
 	{
-		return rsa != nullptr && rsa->pub != nullptr;
+		return pkey != nullptr && pkey->pub != nullptr;
 	}
 
 	bool can_sign()
 	{
-		return rsa != nullptr && rsa->priv != nullptr;
+		return pkey != nullptr && pkey->priv != nullptr;
+	}
+
+	bool can_decrypt()
+	{
+		return can_sign();
 	}
 
 	bool can_gen_dh()
@@ -178,11 +227,11 @@ public:
 		return dh_params != nullptr && dh_params->pub != nullptr;
 	}
 
-	RSAbox *set_rsa(RSA *, RSA *);
+	PKEYbox *set_pkey(EVP_PKEY *, EVP_PKEY *);
 
-	RSAbox *get_rsa()
+	PKEYbox *get_pkey()
 	{
-		return rsa;
+		return pkey;
 	}
 
 	std::string get_id()

@@ -423,6 +423,9 @@ int do_decrypt()
 		return -1;
 	}
 
+	if (msg.kex_id() == marker::rsa_kex_id)
+		cerr<<prefix<<"warn: Your peer is out of DH keys and uses RSA fallback mode.\n";
+
 	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 	if (msg.get_srcname().size() > 0)
 		cerr<<" ("<<msg.get_srcname()<<")";

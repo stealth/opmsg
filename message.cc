@@ -80,31 +80,40 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 {
 	size_t siglen = 0;
 	EVP_MD_CTX md_ctx;
+	RSA *rsa = nullptr;
 
 	result = "";
 
+	if (!src_persona->can_sign())
+		return build_error("sign:: Persona has no pkey.", -1);
+
 	EVP_MD_CTX_init(&md_ctx);
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-	if (!evp.get())
-		return build_error("signature::EVP_PKEY_new: OOM", -1);
-	if (EVP_PKEY_set1_RSA(evp.get(), src_persona->get_rsa()->priv) != 1)
-		return build_error("signature::EVP_PKEY_set1_RSA", -1);
-	if (EVP_DigestSignInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp.get()) != 1)
-		return build_error("signature::EVP_DigestSignInit", -1);
+
+	// do not take ownership
+	EVP_PKEY *evp = src_persona->get_pkey()->priv;
+
+	if ((rsa = EVP_PKEY_get1_RSA(evp))) {
+		RSA_blinding_on(rsa, nullptr);
+		RSA_free(rsa);
+		rsa = nullptr;
+	}
+
+	if (EVP_DigestSignInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp) != 1)
+		return build_error("sign::EVP_DigestSignInit", -1);
 	if (EVP_DigestSignUpdate(&md_ctx, msg.c_str(), msg.size()) != 1)
-		return build_error("signature::EVP_DigestSignUpdate:", -1);
+		return build_error("sign::EVP_DigestSignUpdate:", -1);
 	if (EVP_DigestSignFinal(&md_ctx, nullptr, &siglen) != 1)
-		return build_error("signature:: EVP_DigestSignFinal: Message signing failed", -1);
+		return build_error("sign:: EVP_DigestSignFinal: Message signing failed", -1);
 
 	unique_ptr<unsigned char[]> sig(new (nothrow) unsigned char[siglen]);
 	if (!sig.get() || EVP_DigestSignFinal(&md_ctx, sig.get(), &siglen) != 1)
-		return build_error("signature:: EVP_DigestSignFinal: Message signing failed", -1);
+		return build_error("sign:: EVP_DigestSignFinal: Message signing failed", -1);
 	EVP_MD_CTX_cleanup(&md_ctx);
 
 	string s = "";
 	b64_encode(reinterpret_cast<char *>(sig.get()), siglen, s);
 	if (s.empty())
-		return build_error("signature:: Failed to create signature", -1);
+		return build_error("sign:: Failed to create signature", -1);
 
 	result = marker::sig_begin;
 	while (s.size() > 0) {
@@ -121,6 +130,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 {
 	unsigned char iv[OPMSG_MAX_IV_LENGTH], iv_kdf[OPMSG_MAX_KEY_LENGTH];
 	char aad_tag[16];
+	RSA *rsa = nullptr;
 	EVP_CIPHER_CTX c_ctx;
 	DHbox *dh = nullptr;
 	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
@@ -150,11 +160,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (!is_hex_hash(kex_id_hex))
 		return build_error("encrypt: Invalid DH key id " + kex_id_hex, -1);
 
-	if (!dst_persona || !src_persona)
-		return build_error("encrypt: Missing personas", -1);
-
 	if (!src_persona->can_sign())
-		return build_error("encrypt: missing RSA signature key for src persona " + src_id_hex, -1);
+		return build_error("encrypt: missing signature key for src persona " + src_id_hex, -1);
+	if (!dst_persona->can_encrypt())
+		return build_error("encrypt:: missing key for dst persona " + dst_id_hex, -1);
 
 	if (!no_dh_key) {
 		if (!(dh = dst_persona->find_dh_key(kex_id_hex)))
@@ -227,16 +236,19 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		if (RAND_bytes(secret.get(), slen) != 1)
 			return build_error("encrypt::RAND_bytes: ", -1);
 
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-		if (!evp.get() || EVP_PKEY_set1_RSA(evp.get(), dst_persona->get_rsa()->pub) != 1)
-			return build_error("encrypt:: Unable to set RSA encryption key ", -1);
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp.get(), nullptr), EVP_PKEY_CTX_free);
+		EVP_PKEY *evp = dst_persona->get_pkey()->pub;
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp, nullptr), EVP_PKEY_CTX_free);
 		if (!p_ctx.get())
-			return build_error("encrypt:: Unable to create RSA encryption context ", -1);
+			return build_error("encrypt:: Unable to create PKEY encryption context ", -1);
 		if (EVP_PKEY_encrypt_init(p_ctx.get()) != 1)
 			return build_error("encrypt::EVP_PKEY_encrypt_init:", -1);
-		if (EVP_PKEY_CTX_set_rsa_padding(p_ctx.get(), RSA_PKCS1_PADDING) != 1)
-			return build_error("encrypt::EVP_PKEY_CTX_set_rsa_padding", -1);
+
+		if ((rsa = EVP_PKEY_get1_RSA(evp))) {
+			if (EVP_PKEY_CTX_set_rsa_padding(p_ctx.get(), RSA_PKCS1_PADDING) != 1)
+				return build_error("encrypt::EVP_PKEY_CTX_set_rsa_padding", -1);
+			RSA_free(rsa);
+			rsa = nullptr;
+		}
 		size_t outlen = 0;
 		if (EVP_PKEY_encrypt(p_ctx.get(), nullptr, &outlen, secret.get(), slen) != 1)
 			return build_error("encrypt::EVP_PKEY_encrypt: ", -1);
@@ -338,6 +350,7 @@ int message::decrypt(string &raw)
 {
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
 	DHbox *dh = nullptr;
+	RSA *rsa = nullptr;
 	EVP_MD_CTX md_ctx;
 	EVP_CIPHER_CTX c_ctx;
 	unsigned char iv[OPMSG_MAX_IV_LENGTH];
@@ -433,17 +446,13 @@ int message::decrypt(string &raw)
 
 	// for src persona, we only need RSA keys for signature validation
 	unique_ptr<persona> src_persona(new (nothrow) persona(cfgbase, src_id_hex));
-	if (!src_persona.get() || src_persona->load(marker::rsa_kex_id) < 0)
-		return build_error("decrypt: Unknown src persona " + src_id_hex, -1);
+	if (!src_persona.get() || src_persona->load(marker::rsa_kex_id) < 0 || !src_persona->can_verify())
+		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, -1);
 
 	// check sig
 	EVP_MD_CTX_init(&md_ctx);
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-	if (!evp.get())
-		return build_error("decrypt::EVP_PKEY_new: OOM", -1);
-	if (EVP_PKEY_set1_RSA(evp.get(), src_persona->get_rsa()->pub) != 1)
-		return build_error("decrypt::EVP_PKEY_set1_RSA:", -1);
-	if (EVP_DigestVerifyInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp.get()) != 1)
+	EVP_PKEY *evp = src_persona->get_pkey()->pub;
+	if (EVP_DigestVerifyInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp) != 1)
 		return build_error("decrypt::EVP_DigestVerifyInit:", -1);
 	if (EVP_DigestVerifyUpdate(&md_ctx, raw.c_str(), raw.size()) != 1)
 		return build_error("decrypt::EVP_DigestVerifyUpdate:", -1);
@@ -453,6 +462,7 @@ int message::decrypt(string &raw)
 		return build_error("decrypt::EVP_DigestVerifyFinal: Message verification FAILED:", -1);
 
 	EVP_MD_CTX_cleanup(&md_ctx);
+	evp = nullptr;
 
 	//
 	// at this point, the message is valid authenticated by src_id
@@ -540,19 +550,24 @@ int message::decrypt(string &raw)
 	int slen = 0;
 	unique_ptr<unsigned char[]> secret(nullptr);
 	if (!has_dh_key) {
-		if (!dst_persona->get_rsa()->can_decrypt())
-			return build_error("decrypt: No private RSA key for persona " + dst_persona->get_id(), -1);
+		if (!dst_persona->can_decrypt())
+			return build_error("decrypt: No private PKEY for persona " + dst_persona->get_id(), -1);
 		// kexdh contains pub encrypted secret, not DH BIGNUM
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-		if (!evp.get() || EVP_PKEY_set1_RSA(evp.get(), dst_persona->get_rsa()->priv) != 1)
-			return build_error("decrypt:: Unable to set RSA decryption key ", -1);
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp.get(), nullptr), EVP_PKEY_CTX_free);
+		evp = dst_persona->get_pkey()->priv;
+
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp, nullptr), EVP_PKEY_CTX_free);
 		if (!p_ctx.get())
-			return build_error("decrypt:: Unable to set RSA decryption context ", -1);
+			return build_error("decrypt:: Unable to set PKEY decryption context ", -1);
 		if (EVP_PKEY_decrypt_init(p_ctx.get()) != 1)
 			return build_error("decrypt::EVP_PKEY_decrypt_init", -1);
-		if (EVP_PKEY_CTX_set_rsa_padding(p_ctx.get(), RSA_PKCS1_PADDING) != 1)
-			return build_error("decrypt::EVP_PKEY_CTX_set_rsa_padding", -1);
+
+		if ((rsa = EVP_PKEY_get1_RSA(evp))) {
+			RSA_blinding_on(rsa, nullptr);
+			RSA_free(rsa);
+			rsa = nullptr;
+			if (EVP_PKEY_CTX_set_rsa_padding(p_ctx.get(), RSA_PKCS1_PADDING) != 1)
+				return build_error("decrypt::EVP_PKEY_CTX_set_rsa_padding", -1);
+		}
 		size_t outlen = 0;
 		if (EVP_PKEY_decrypt(p_ctx.get(), nullptr, &outlen, reinterpret_cast<const unsigned char *>(kexdh.c_str()), kexdh.size()) != 1 || outlen > max_sane_string)
 			return build_error("decrypt::EVP_PKEY_decrypt: ", -1);
