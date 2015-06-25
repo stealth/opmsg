@@ -27,6 +27,7 @@
 #include <unistd.h>
 #include <getopt.h>
 #include <signal.h>
+#include <algorithm>
 #include <sys/stat.h>
 #include <sys/types.h>
 
@@ -823,6 +824,10 @@ int main(int argc, char **argv)
 		config::infile = "/dev/stdin";
 	if (config::outfile == "-")
 		config::outfile = "/dev/stdout";
+
+	// strip of spaces in case of split format id given
+	config::my_id.erase(remove(config::my_id.begin(), config::my_id.end(), ' '), config::my_id.end());
+	dst_id.erase(remove(dst_id.begin(), dst_id.end(), ' '), dst_id.end());
 
 	// remove any leading 0x in the ID's, as passed by mutt etc.
 	if (dst_id.find("0x") == 0)

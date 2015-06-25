@@ -268,6 +268,7 @@ int keystore::gen_rsa(string &pub, string &priv)
 
 persona *keystore::find_persona(const std::string &hex)
 {
+	errno = 0;
 	if (!is_hex_hash(hex))
 		return build_error("find_persona: Invalid id.", nullptr);
 
