@@ -25,6 +25,10 @@
 #include <cstring>
 #include <cstdlib>
 
+extern "C" {
+#include <openssl/ec.h>
+#include <openssl/obj_mac.h>
+}
 
 namespace opmsg {
 
@@ -49,6 +53,10 @@ std::string infile = "/dev/stdin";
 std::string outfile = "/dev/stdout";
 std::string idformat = "split";
 std::string my_id = "";
+
+std::string curve = "brainpoolP320r1";
+
+int curve_nid = NID_brainpoolP320r1;
 
 bool burn = 0;
 
@@ -113,6 +121,25 @@ int parse_config(const string &cfgbase)
 			config::rsa_override = 1;
 		else if (sline == "burn")
 			config::burn = 1;
+		else if (sline == "curve=brainpoolP320r1") {
+			config::curve = "brainpoolP320r1";
+			config::curve_nid = NID_brainpoolP320r1;
+		} else if (sline == "curve=brainpoolP384r1") {
+			config::curve = "brainpoolP384r1";
+			config::curve_nid = NID_brainpoolP384r1;
+		} else if (sline == "curve=brainpoolP512r1") {
+			config::curve = "brainpoolP512r1";
+			config::curve_nid = NID_brainpoolP512r1;
+		} else if (sline == "curve=brainpoolP320t1") {
+			config::curve = "brainpoolP320t1";
+			config::curve_nid = NID_brainpoolP320t1;
+		} else if (sline == "curve=brainpoolP384t1") {
+			config::curve = "brainpoolP384t1";
+			config::curve_nid = NID_brainpoolP384t1;
+		} else if (sline == "curve=brainpoolP512t1") {
+			config::curve = "brainpoolP512t1";
+			config::curve_nid = NID_brainpoolP512t1;
+		}
 	}
 	return 0;
 }

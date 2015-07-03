@@ -54,6 +54,7 @@ enum {
 	NEWDHP			= 3,
 	LINK			= 4,
 	BURN			= 5,
+	NEWECP			= 6,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -65,7 +66,8 @@ enum {
 	CMODE_IMPORT		= 0x4000,
 	CMODE_LIST		= 0x8000,
 	CMODE_PGPLIST		= 0x10000,
-	CMODE_LINK		= 0x20000
+	CMODE_LINK		= 0x20000,
+	CMODE_NEWECP		= 0x40000,
 };
 
 
@@ -475,23 +477,32 @@ int do_verify(const string &verify_file)
 }
 
 
-int do_newpersona(const string &name)
+int do_newpersona(const string &name, const string &type)
 {
 	keystore ks(config::phash, config::cfgbase);
 
 	string pub = "", priv = "";
-	if (ks.gen_rsa(pub, priv) < 0) {
-		cerr<<prefix<<"ERROR: generating new RSA keys: "<<ks.why()<<endl;
-		return -1;
+
+	if (type == marker::rsa) {
+		if (ks.gen_rsa(pub, priv) < 0) {
+			cerr<<prefix<<"ERROR: generating new RSA keys: "<<ks.why()<<endl;
+			return -1;
+		}
+	} else {
+		if (ks.gen_ec(pub, priv) < 0) {
+			cerr<<prefix<<"ERROR: generating new EC keys: "<<ks.why()<<endl;
+			return -1;
+		}
 	}
-	// "new" means, generate new DHparams
+
+	// "new" means, generate new DHparams in case of RSA
 	persona *p = nullptr;
 	if (!(p = ks.add_persona(name, pub, priv, "new"))) {
 		cerr<<prefix<<"ERROR: Adding new persona to keystore: "<<ks.why()<<endl;
 		return -1;
 	}
-	cerr<<"\n\n"<<prefix<<"Successfully generated persona (RSA + DHparams) with id\n"<<prefix<<idformat(p->get_id())<<endl;
-	cerr<<prefix<<"Tell your remote peer to add the following RSA pubkey like this:\n";
+	cerr<<"\n\n"<<prefix<<"Successfully generated persona with id\n"<<prefix<<idformat(p->get_id())<<endl;
+	cerr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
 	cerr<<prefix<<"opmsg --import --phash "<<config::phash;
 	if (name.size() > 0)
 		cerr<<" --name "<<name;
@@ -501,6 +512,18 @@ int do_newpersona(const string &name)
 	cerr<<prefix<<"the import message from your peer.\n";
 	cerr<<prefix<<"AFTER THAT, you can go ahead, safely exchanging op-messages.\n\n";
 	return 0;
+}
+
+
+int do_new_rsa_persona(const string &name)
+{
+	return do_newpersona(name, marker::rsa);
+}
+
+
+int do_new_ec_persona(const string &name)
+{
+	return do_newpersona(name, marker::ec);
 }
 
 
@@ -558,11 +581,11 @@ int do_list(const string &name)
 		return -1;
 	}
 	cerr<<prefix<<"Successfully loaded "<<ks.size()<<" personas.\n";
-	cerr<<prefix<<"(id)\t(name)\t(has-RSA-priv)\t(#DHkeys)\n";
+	cerr<<prefix<<"(id)\t(name)\t(has privkey)\t(#DHkeys)\t(type)\n";
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (name.size() == 0 || i->second->get_name().find(name) != string::npos) {
 			cout<<prefix<<idformat(i->second->get_id())<<"\t"<<i->second->get_name()<< "\t";
-			cout<<i->second->can_sign()<<"\t"<<i->second->size()<<endl;
+			cout<<i->second->can_sign()<<"\t"<<i->second->size()<<"\t"<<i->second->get_type()<<endl;
 		}
 	}
 	return 0;
@@ -583,14 +606,13 @@ int do_pgplist(const string &name)
 }
 
 
-
 int do_import(const string &name)
 {
 	if (config::infile == "/dev/stdin")
-		cerr<<prefix<<"Paste the RSA pubkey here. End with <Ctrl-C>\n\n";
+		cerr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
 
-	string rsapub = "";
-	if (read_msg(config::infile, rsapub) < 0) {
+	string pub = "";
+	if (read_msg(config::infile, pub) < 0) {
 		cerr<<prefix<<"ERROR: Importing persona: "<<strerror(errno)<<endl;
 		return -1;
 	}
@@ -598,7 +620,7 @@ int do_import(const string &name)
 	keystore ks(config::phash, config::cfgbase);
 
 	persona *p = nullptr;
-	if (!(p = ks.add_persona(name, rsapub, "", ""))) {
+	if (!(p = ks.add_persona(name, pub, "", ""))) {
 		cerr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl;
 		return -1;
 	}
@@ -702,6 +724,7 @@ int main(int argc, char **argv)
 	        {"long", no_argument, nullptr, ID_FORMAT_LONG},
 	        {"split", no_argument, nullptr, ID_FORMAT_SPLIT},
 	        {"newp", no_argument, nullptr, 'N'},
+		{"newecp", no_argument, nullptr, NEWECP},
 		{"newdhp", no_argument, nullptr, NEWDHP},
 	        {"calgo", required_argument, nullptr, 'C'},
 	        {"phash", required_argument, nullptr, 'p'},
@@ -795,6 +818,9 @@ int main(int argc, char **argv)
 		case NEWDHP:
 			cmode = CMODE_NEWDHP;
 			break;
+		case NEWECP:
+			cmode = CMODE_NEWECP;
+			break;
 		case ID_FORMAT_LONG:
 			config::idformat = "long";
 			break;
@@ -875,11 +901,15 @@ int main(int argc, char **argv)
 		break;
 	case CMODE_NEWP:
 		cerr<<prefix<<"creating new persona (RSA "<<config::rsa_len<<", DH "<<config::dh_plen<<")\n\n";
-		r = do_newpersona(name);
+		r = do_new_rsa_persona(name);
 		break;
 	case CMODE_NEWDHP:
 		cerr<<prefix<<"creating new DHparams for persona "<<idformat(config::my_id)<<"\n\n";
 		r = do_newdhparams();
+		break;
+	case CMODE_NEWECP:
+		cerr<<prefix<<"creating new EC persona (curve "<<config::curve<<")\n\n";
+		r = do_new_ec_persona(name);
 		break;
 	case CMODE_IMPORT:
 		cerr<<prefix<<"importing persona\n";

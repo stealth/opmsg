@@ -30,6 +30,7 @@
 
 extern "C" {
 #include <openssl/dh.h>
+#include <openssl/ec.h>
 #include <openssl/bn.h>
 #include <openssl/pem.h>
 #include <openssl/evp.h>
@@ -100,7 +101,8 @@ static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 }
 
 
-static int rsa_normalize_and_hexhash(const EVP_MD *mdtype, string &rsa, string &result)
+// normalize and hash a PEM pubkey
+static int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result)
 {
 	result = "";
 
@@ -111,26 +113,26 @@ static int rsa_normalize_and_hexhash(const EVP_MD *mdtype, string &rsa, string &
 	string::size_type start = string::npos, end = string::npos;
 
 	// sanitize checking, and put keyblob in a uniform format
-	if ((start = rsa.find(marker::rsa_pub_begin)) == string::npos)
+	if ((start = s.find(marker::pub_begin)) == string::npos)
 		return -1;
 	if (start > 0)
-		rsa.erase(0, start);
+		s.erase(0, start);
 	// dont allow more than one key in keyblob
-	if (rsa.find(marker::rsa_pub_begin, marker::rsa_pub_begin.size()) != string::npos)
+	if (s.find(marker::pub_begin, marker::pub_begin.size()) != string::npos)
 		return -1;
-	if ((end = rsa.find(marker::rsa_pub_end)) == string::npos)
+	if ((end = s.find(marker::pub_end)) == string::npos)
 		return -1;
-	rsa.erase(end + marker::rsa_pub_end.size());
+	s.erase(end + marker::pub_end.size());
 
 	// one single newline after we truncated anything after end-marker which does not contain \n
-	rsa += "\n";
+	s += "\n";
 
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
 		return -1;
-	if (EVP_DigestUpdate(md_ctx.get(), rsa.c_str(), rsa.size()) != 1)
+	if (EVP_DigestUpdate(md_ctx.get(), s.c_str(), s.size()) != 1)
 		return -1;
 	if (EVP_DigestFinal_ex(md_ctx.get(), h, &hlen) != 1)
 		return -1;
@@ -201,6 +203,64 @@ int keystore::load()
 	}
 	closedir(d);
 	return 0;
+}
+
+
+int keystore::gen_ec(string &pub, string &priv)
+{
+	char *ptr = nullptr;
+
+	pub = "";
+	priv = "";
+
+	if (RAND_load_file("/dev/urandom", 256) != 256)
+		RAND_load_file("/dev/random", 8);
+
+	unique_ptr<EC_GROUP, EC_GROUP_del> ecgrp(EC_GROUP_new_by_curve_name(config::curve_nid), EC_GROUP_free);
+	if (!ecgrp.get())
+		return build_error("gen_ec::EC_GROUP_new_by_curve_name:", -1);
+	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(config::curve_nid), EC_KEY_free);
+	if (!eckey.get())
+		return build_error("gen_ec::EC_KEY_new_by_curve_name:", -1);
+
+	if (EC_KEY_set_group(eckey.get(), ecgrp.get()) != 1)
+		return build_error("gen_ec::EC_KEY_set_group:", -1);
+	if (EC_KEY_generate_key(eckey.get()) != 1)
+		return build_error("gen_ec::EC_KEY_generate_key:", -1);
+	if (EC_KEY_check_key(eckey.get()) != 1)
+		return build_error("gen_ec::EC_KEY_check_key:", -1);
+
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
+	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
+	if (!evp.get() || !bio.get())
+		return build_error("gen_ec: OOM", -1);
+	if (EVP_PKEY_set1_EC_KEY(evp.get(), eckey.get()) != 1)
+		return build_error("gen_ec::EVP_PKEY_set1_EC_KEY: Error generating EC key", -1);
+
+/*	unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(evp.get(), nullptr), EVP_PKEY_CTX_free);
+	if (!ctx.get())
+		return build_error("gen_ec: OOM", -1);
+	if (EVP_PKEY_CTX_ctrl_str(ctx.get(), "ec_param_enc", "explicit") <= 0)
+		return build_error("gen_ec::EVP_PKEY_CTX_ctrl_str:", -1);
+*/
+	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1)
+		return build_error("gen_ec::PEM_write_bio_PUBKEY: Error generating EC key", -1);
+
+	long l = BIO_get_mem_data(bio.get(), &ptr);
+	pub = string(ptr, l);
+
+	bio.reset(BIO_new(BIO_s_mem()));
+	if (!bio.get())
+		return build_error("gen_ec::BIO_new: OOM", -1);
+
+	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
+		return build_error("gen_ec::PEM_write_bio_PrivateKey: Error generating EC key", -1);
+
+	l = BIO_get_mem_data(bio.get(), &ptr);
+	priv = string(ptr, l);
+
+	return 0;
+
 }
 
 
@@ -292,11 +352,13 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 {
 	int fd = -1;
 
-	// create hash (hex view) of public RSA part and use as a reference
+	string type1 = marker::unknown, type2 = marker::unknown;
+
+	// create hash (hex view) of public part and use as a reference
 	string hex = "";
 	string pub_pem = c_pub_pem;
-	if (rsa_normalize_and_hexhash(md, pub_pem, hex) < 0)
-		return build_error("add_persona: Invalid RSA pubkey blob. Missing BEGIN/END markers?", nullptr);
+	if (normalize_and_hexhash(md, pub_pem, hex) < 0)
+		return build_error("add_persona: Invalid pubkey blob. Missing BEGIN/END markers?", nullptr);
 
 	string tmpdir;
 	if (mkdir_helper(cfgbase, tmpdir) < 0)
@@ -313,41 +375,60 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(nullptr, EVP_PKEY_free);
 	if (pub_pem.size() > 0) {
-		string rfile = tmpdir + "/rsa.pub.pem";
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+		if (!bio.get())
+			return build_error("add_persona: OOM", nullptr);
+
+		evp_pub.reset(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr));
+		if (!evp_pub.get())
+			return build_error("add_persona::PEM_read_PUBKEY: Error reading PEM key", nullptr);
+
+		if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_EC)
+			type1 = marker::ec;
+		else if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_RSA)
+			type1 = marker::rsa;
+		else
+			return build_error("add_persona: Unknown persona type.", nullptr);
+
+		string rfile = tmpdir + "/" + type1 + ".pub.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
 		write(fd, pub_pem.c_str(), pub_pem.size());
 		close(fd);
-
-		unique_ptr<FILE, FILE_del> f(fopen(rfile.c_str(), "r"), ffclose);
-		if (!f.get())
-			 return build_error("add_persona::fopen:", nullptr);
-		evp_pub.reset(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr));
-		if (!evp_pub.get())
-			return build_error("add_persona::PEM_read_PUBKEY: Error reading PEM key", nullptr);
 	}
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
 	if (priv_pem.size() > 0) {
-		string rfile = tmpdir + "/rsa.priv.pem";
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(priv_pem.c_str()), priv_pem.size()), BIO_free);
+		if (!bio.get())
+			return build_error("add_persona: OOM", nullptr);
+
+		evp_priv.reset(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
+		if (!evp_priv.get())
+			return build_error("add_persona::PEM_read_PrivateKey: Error reading PEM key", nullptr);
+
+		if (EVP_PKEY_type(evp_priv->type) == EVP_PKEY_EC)
+			type2 = marker::ec;
+		else if (EVP_PKEY_type(evp_priv->type) == EVP_PKEY_RSA)
+			type2 = marker::rsa;
+		else
+			return build_error("add_persona: Unknown persona type.", nullptr);
+
+		if (type1 != marker::unknown && type1 != type2)
+			return build_error("add_persona: Different persona keytypes " + type1 + " vs. " + type2, nullptr);
+
+		string rfile = tmpdir + "/" + type2 + ".priv.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
 		write(fd, priv_pem.c_str(), priv_pem.size());
 		close(fd);
-
-		unique_ptr<FILE, FILE_del> f(fopen(rfile.c_str(), "r"), ffclose);
-		if (!f.get())
-			return build_error("add_persona::fopen:", nullptr);
-		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
-		if (!evp_priv.get())
-			return build_error("add_persona::PEM_read_PrivateKey: Error reading PEM key", nullptr);
 	}
 
 	string hexdir = cfgbase + "/" + hex;
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		int saved_errno = errno;
-		unlink(string(tmpdir + "/rsa.priv.pem").c_str());
-		unlink(string(tmpdir + "/rsa.pub.pem").c_str());
+		unlink(string(tmpdir + "/" + type1 + ".priv.pem").c_str());
+		unlink(string(tmpdir + "/" + type1 + ".pub.pem").c_str());
 		unlink(string(tmpdir + "/name").c_str());
 		rmdir(tmpdir.c_str());
 		errno = saved_errno;
@@ -361,8 +442,9 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 	p->set_pkey(evp_pub.release(), evp_priv.release());
 	p->pkey->pub_pem = pub_pem;
 	p->pkey->priv_pem = priv_pem;
+	p->set_type(type1);
 
-	if (dhparams_pem.size() > 0) {
+	if (dhparams_pem.size() > 0 && type1 == marker::rsa) {
 		if (dhparams_pem == "new") {
 			if (p->new_dh_params() == nullptr)
 				return build_error(p->why(), nullptr);
@@ -493,6 +575,27 @@ int persona::load_dh(const string &hex)
 }
 
 
+int persona::check_type()
+{
+	if (!is_hex_hash(id))
+		return build_error("check_type: Not a valid persona id", -1);
+
+	string dir = cfgbase + "/" + id;
+	string rsa = dir + "/rsa.pub.pem";
+	struct stat st;
+	if (stat(rsa.c_str(), &st) == 0) {
+		ptype = marker::rsa;
+	} else {
+		string ec = dir + "/ec.pub.pem";
+		if (stat(ec.c_str(), &st) == 0)
+			ptype = marker::ec;
+		else
+			return build_error("check_type: Neither RSA nor EC keys found for persona.", -1);
+	}
+	return 0;
+}
+
+
 int persona::load(const std::string &dh_hex)
 {
 	size_t r = 0;
@@ -505,7 +608,13 @@ int persona::load(const std::string &dh_hex)
 	if (!is_hex_hash(id))
 		return build_error("load: Not a valid persona id", -1);
 	if (dh_hex.size() > 0 && !is_hex_hash(dh_hex))
-		return build_error("load: Not a valid DH hex id", -1);
+		return build_error("load: Not a valid session-key hex id", -1);
+
+	// check our own persona type if not already known
+	if (ptype == marker::unknown) {
+		if (this->check_type() < 0)
+			return -1;
+	}
 
 	// load name, if any
 	unique_ptr<FILE, FILE_del> f(fopen(file.c_str(), "r"), ffclose);
@@ -536,29 +645,29 @@ int persona::load(const std::string &dh_hex)
 		link_src = string(s);
 	}
 
-	// load RSA keys
+	// load EC/RSA keys
 	string pub_pem = "", priv_pem = "";
 
-	file = dir + "/rsa.pub.pem";
+	file = dir + "/" + ptype + ".pub.pem";
 	f.reset(fopen(file.c_str(), "r"));
 	if (!f.get())
-		return build_error("load: Error reading public RSA file for " + id, -1);
+		return build_error("load: Error reading public key file for " + id, -1);
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp_pub.get())
-		return build_error("load::PEM_read_PUBKEY: Error reading public RSA file for " + id, -1);
+		return build_error("load::PEM_read_PUBKEY: Error reading public key file for " + id, -1);
 	rewind(f.get());
 	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 		return build_error("load::fread:", -1);
 	pub_pem = string(buf, r);
 
-	file = dir + "/rsa.priv.pem";
+	file = dir + "/" + ptype + ".priv.pem";
 	f.reset(fopen(file.c_str(), "r"));
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
 	if (f.get()) {
 		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
 		if (!evp_priv.get())
-			return build_error("load::PEM_read_PrivateKey: Error reading private RSA file for " + id, -1);
+			return build_error("load::PEM_read_PrivateKey: Error reading private key file for " + id, -1);
 		rewind(f.get());
 		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 			return build_error("load::fread:", -1);
@@ -569,17 +678,19 @@ int persona::load(const std::string &dh_hex)
 	pkey->pub_pem = pub_pem;
 	pkey->priv_pem = priv_pem;
 
-	// load DH params if avail
-	file = dir + "/dhparams.pem";
-	f.reset(fopen(file.c_str(), "r"));
-	if (f.get()) {
-		if (!PEM_read_DHparams(f.get(), &dhp, nullptr, nullptr))
-			return build_error("load::PEM_read_DHparams: Error reading DH params for " + id, -1);
-		dh_params = new (nothrow) DHbox(dhp, nullptr);
-		// do not free dh
+	if (ptype == marker::rsa) {
+		// load DH params if avail
+		file = dir + "/dhparams.pem";
+		f.reset(fopen(file.c_str(), "r"));
+		if (f.get()) {
+			if (!PEM_read_DHparams(f.get(), &dhp, nullptr, nullptr))
+				return build_error("load::PEM_read_DHparams: Error reading DH params for " + id, -1);
+			dh_params = new (nothrow) DHbox(dhp, nullptr);
+			// do not free dh
+		}
 	}
 
-	// if a certain DH hex was given, only load this one. A dh_hex of special kind, only
+	// if a certain dh_hex was given, only load this one. A dh_hex of special kind, only
 	// make us load RSA keys
 	if (dh_hex.size() > 0) {
 		if (dh_hex == marker::rsa_kex_id)

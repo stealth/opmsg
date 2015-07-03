@@ -30,6 +30,7 @@
 #include <sys/stat.h>
 
 #include "misc.h"
+#include "marker.h"
 
 
 extern "C" {
@@ -158,7 +159,7 @@ public:
 
 class persona {
 
-	std::string id, name, link_src;
+	std::string id, name, link_src, ptype;
 	std::map<std::string, DHbox *> keys;
 
 	PKEYbox *pkey;
@@ -190,6 +191,8 @@ public:
 	{
 		if (!is_hex_hash(id))
 			id = "dead";
+
+		ptype = marker::unknown;
 	}
 
 	virtual ~persona()
@@ -201,6 +204,19 @@ public:
 		delete pkey;
 		delete dh_params;
 	}
+
+	void set_type(const std::string &t)
+	{
+		if (t == marker::rsa || t == marker::ec)
+			ptype = t;
+	}
+
+	std::string get_type()
+	{
+		return ptype;
+	}
+
+	int check_type();
 
 	bool can_verify()
 	{
@@ -346,6 +362,8 @@ public:
 	int load();
 
 	int gen_rsa(std::string &pub, std::string &priv);
+
+	int gen_ec(std::string &pub, std::string &priv);
 
 	persona *add_persona(const std::string &name, const std::string &rsa_pub_pem, const std::string &rsa_priv_pem, const std::string &dhparams_pem);
 

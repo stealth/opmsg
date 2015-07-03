@@ -473,14 +473,14 @@ int message::decrypt(string &raw)
 	// new dh keys included for later DH kex?
 	string newdh = "";
 	for (;;) {
-		if ((pos = raw.find(marker::dh_begin)) == string::npos)
+		if ((pos = raw.find(marker::ec_dh_begin)) == string::npos)
 			break;
-		if ((nl = raw.find(marker::dh_end, pos)) == string::npos)
+		if ((nl = raw.find(marker::ec_dh_end, pos)) == string::npos)
 			break;
 		if (nl - pos > max_sane_string)
 			return build_error("decrypt: Not in OPMSGv1 format (12).", -1);
-		newdh = raw.substr(pos, nl + marker::dh_end.size() - pos);
-		raw.erase(pos, nl + marker::dh_end.size() - pos);
+		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
+		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
 		dh_keys.push_back(newdh);
 		if (!src_persona->add_dh_pubkey(khash, newdh))
 			dh_keys.pop_back();

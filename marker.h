@@ -24,11 +24,11 @@ namespace opmsg {
 
 namespace marker {
 
-extern std::string dh_begin;
-extern std::string dh_end;
+extern std::string ec_dh_begin;
+extern std::string ec_dh_end;
 
-extern std::string rsa_pub_begin;
-extern std::string rsa_pub_end;
+extern std::string pub_begin;
+extern std::string pub_end;
 
 extern std::string sig_begin;
 extern std::string sig_end;
@@ -53,6 +53,9 @@ extern std::string aad_tag;
 extern std::string rsa_kex_id;
 
 extern std::string algos;
+
+// persona types
+extern std::string ec, rsa, unknown;
 
 }
 

@@ -26,11 +26,11 @@ namespace marker {
 
 using namespace std;
 
-string dh_begin = "-----BEGIN PUBLIC KEY-----\n";
-string dh_end = "-----END PUBLIC KEY-----\n";
+string ec_dh_begin = "-----BEGIN PUBLIC KEY-----\n";
+string ec_dh_end = "-----END PUBLIC KEY-----\n";
 
-string rsa_pub_begin = "-----BEGIN PUBLIC KEY-----\n";
-string rsa_pub_end = "-----END PUBLIC KEY-----";		// note missing trailing \n
+string pub_begin = "-----BEGIN PUBLIC KEY-----\n";
+string pub_end = "-----END PUBLIC KEY-----";		// note missing trailing \n
 
 string sig_begin = "-----BEGIN SIGNATURE-----\n";
 string sig_end = "-----END SIGNATURE-----\n";
@@ -57,6 +57,10 @@ string rsa_kex_id = "00000000";
 
 // rythmz=persona-hash:key-hash:sign-hash:crypto:IV
 string algos = "rythmz=";
+
+string ec = "ec";
+string rsa = "rsa";
+string unknown = "unknown";
 
 }
 
