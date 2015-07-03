@@ -345,13 +345,13 @@ int do_encrypt(const string &dst_id)
 	// rsa marker in case no DH key was found
 	msg.kex_id(kex_id);
 
-	// Add new DH for upcoming Kex in future
-	vector<DHbox *> newdh;
+	// Add new (EC)DH keys for upcoming Kex in future
+	vector<PKEYbox *> newdh;
 	for (int i = 0; src_p->can_gen_dh() && i < config::new_dh_keys; ++i) {
-		DHbox *dhb = src_p->gen_dh_key(config::khash);
-		if (dhb) {
-			newdh.push_back(dhb);
-			msg.dh_keys.push_back(dhb->pub_pem);
+		PKEYbox *pbox = src_p->gen_dh_key(config::khash);
+		if (pbox) {
+			newdh.push_back(pbox);
+			msg.ecdh_keys.push_back(pbox->pub_pem);
 		}
 	}
 
@@ -428,7 +428,7 @@ int do_decrypt()
 	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 	if (msg.get_srcname().size() > 0)
 		cerr<<" ("<<msg.get_srcname()<<")";
-	cerr<<endl<<prefix<<"Imported "<<msg.dh_keys.size()<<" new DH keys.\n\n";
+	cerr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n";
 
 	if (write_msg(config::outfile, ctext) < 0) {
 		cerr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";

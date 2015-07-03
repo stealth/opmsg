@@ -83,7 +83,7 @@ class message {
 
 public:
 
-	std::vector<std::string> dh_keys;
+	std::vector<std::string> ecdh_keys;	// either DH or ECDH keys
 
 	message(const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
 		: version(1), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
@@ -156,7 +156,7 @@ public:
 
 	void add_dh_key(const std::string &s)
 	{
-		dh_keys.push_back(s);
+		ecdh_keys.push_back(s);
 	}
 
 	const char *why()

@@ -55,7 +55,7 @@ extern std::string rsa_kex_id;
 extern std::string algos;
 
 // persona types
-extern std::string ec, rsa, unknown;
+extern std::string ec, dh, rsa, unknown;
 
 }
 

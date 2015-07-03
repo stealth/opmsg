@@ -60,6 +60,7 @@ string algos = "rythmz=";
 
 string ec = "ec";
 string rsa = "rsa";
+string dh = "dh";
 string unknown = "unknown";
 
 }

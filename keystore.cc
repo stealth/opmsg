@@ -381,7 +381,7 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 
 		evp_pub.reset(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr));
 		if (!evp_pub.get())
-			return build_error("add_persona::PEM_read_PUBKEY: Error reading PEM key", nullptr);
+			return build_error("add_persona::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
 
 		if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_EC)
 			type1 = marker::ec;
@@ -405,7 +405,7 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 
 		evp_priv.reset(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));
 		if (!evp_priv.get())
-			return build_error("add_persona::PEM_read_PrivateKey: Error reading PEM key", nullptr);
+			return build_error("add_persona::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
 
 		if (EVP_PKEY_type(evp_priv->type) == EVP_PKEY_EC)
 			type2 = marker::ec;
@@ -477,7 +477,7 @@ map<string, persona *>::iterator keystore::next_pers(const map<string, persona *
 }
 
 
-DHbox *persona::find_dh_key(const string &hex)
+PKEYbox *persona::find_dh_key(const string &hex)
 {
 	auto i = keys.find(hex);
 	if (i == keys.end())
@@ -486,19 +486,19 @@ DHbox *persona::find_dh_key(const string &hex)
 }
 
 
-map<string, DHbox *>::iterator persona::first_key()
+map<string, PKEYbox *>::iterator persona::first_key()
 {
 	return keys.begin();
 }
 
 
-map<string, DHbox *>::iterator persona::end_key()
+map<string, PKEYbox *>::iterator persona::end_key()
 {
 	return keys.end();
 }
 
 
-map<string, DHbox *>::iterator persona::next_key(const map<string, DHbox *>::iterator &it)
+map<string, PKEYbox *>::iterator persona::next_key(const map<string, PKEYbox *>::iterator &it)
 {
 	auto it2 = it;
 	return ++it2;
@@ -506,7 +506,12 @@ map<string, DHbox *>::iterator persona::next_key(const map<string, DHbox *>::ite
 
 
 // only load certain DH key. Try to be as relaxed as possible about missing keys,
-// and try to get one part of pub/priv if possible
+// and try to get one part of pub/priv if possible.
+//
+// Note that 'dh' key can also be a EC_KEY for ECDH. Both, DH and EC keys are inside
+// the files named dh.{pub, priv}. This makes sense, as both keytypes are later used
+// for a DH Kex or ECDH Kex.
+//
 int persona::load_dh(const string &hex)
 {
 	size_t r = 0;
@@ -514,15 +519,15 @@ int persona::load_dh(const string &hex)
 	bool has_pub = 0, has_priv = 0;
 
 	if (!is_hex_hash(hex))
-		return build_error("load_dh: Not a valid DH hex id", -1);
+		return build_error("load_dh: Not a valid (EC)DH hex id", -1);
 
-	// load public part of DH key
+	// load public part of (EC)DH key
 	string dhfile = cfgbase + "/" + id + "/" + hex + "/dh.pub.pem";
 
-	unique_ptr<DHbox> dhbox(new (nothrow) DHbox(nullptr, nullptr));
-	if (!dhbox.get())
+	unique_ptr<PKEYbox> pbox(new (nothrow) PKEYbox(nullptr, nullptr));
+	if (!pbox.get())
 		return build_error("load_dh: OOM", -1);
-	dhbox->hex = hex;
+	pbox->hex = hex;
 
 	unique_ptr<FILE, FILE_del> f(fopen(dhfile.c_str(), "r"), ffclose);
 	do {
@@ -534,15 +539,12 @@ int persona::load_dh(const string &hex)
 		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 		if (!evp.get())
 			break;
-		unique_ptr<DH, DH_del> dh1(EVP_PKEY_get1_DH(evp.get()), DH_free);
-		if (!dh1.get())
-			break;
-		dhbox->pub = dh1.release();
-		dhbox->pub_pem = string(buf, r);
+		pbox->pub = evp.release();
+		pbox->pub_pem = string(buf, r);
 		has_pub = 1;
 	} while (0);
 
-	keys[hex] = dhbox.release();
+	keys[hex] = pbox.release();
 
 	// now load private part, if available
 	dhfile = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
@@ -551,20 +553,17 @@ int persona::load_dh(const string &hex)
 		if (!f.get())
 			break;
 		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-			return build_error("load_dh::fread: invalid DH privkey " + hex, -1);
+			return build_error("load_dh::fread: invalid (EC)DH privkey " + hex, -1);
 		rewind(f.get());
 		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 		if (!evp.get())
-			return build_error("load_dh::PEM_read_PrivateKey: Error reading DH privkey " + hex, -1);
-		unique_ptr<DH, DH_del> dh2(EVP_PKEY_get1_DH(evp.get()), DH_free);
-		if (!dh2.get())
-			return build_error("load_dh::EVP_PKEY_get1_DH: Invalid DH privkey " + hex, -1);
-		keys[hex]->priv = dh2.release();
+			return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
+		keys[hex]->priv = evp.release();
 		keys[hex]->priv_pem = string(buf, r);
 		has_priv = 1;
 	} while (0);
 
-	// this can happen, as we leave empty dir's for already imported DH keys, that
+	// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
 	// are tried to be re-imported from old mails
 	if (!has_pub && !has_priv) {
 		delete keys[hex];
@@ -575,6 +574,7 @@ int persona::load_dh(const string &hex)
 }
 
 
+// determine type of a persona
 int persona::check_type()
 {
 	if (!is_hex_hash(id))
@@ -816,7 +816,7 @@ DHbox *persona::new_dh_params()
 }
 
 
-DHbox *persona::gen_dh_key(const string &hash)
+PKEYbox *persona::gen_dh_key(const string &hash)
 {
 	return gen_dh_key(algo2md(hash));
 }
@@ -824,7 +824,7 @@ DHbox *persona::gen_dh_key(const string &hash)
 
 // create an entirely new DH key (based on DH params) for this persona. Key will
 // later be used to decrypt incoming msg, using existing private half of saved DH
-DHbox *persona::gen_dh_key(const EVP_MD *md)
+PKEYbox *persona::gen_dh_key(const EVP_MD *md)
 {
 	char buf[8192];
 	int fd = -1, ecode = 0;
@@ -878,13 +878,11 @@ DHbox *persona::gen_dh_key(const EVP_MD *md)
 		return build_error("gen_dh_key::fread: invalid DH pubkey " + hex, nullptr);
 	string pub_pem = string(buf, r);
 	rewind(f.get());
-	// re-read PEM pubkey, to have distict public key in dh2 for DHbox()
+
+	// re-read PEM pubkey, to have distict public key in evp2 for PKEYbox()
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp2(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp2.get())
 		return build_error("gen_dh_key::PEM_read_PUBKEY: invalid DH pubkey " + hex, nullptr);
-	unique_ptr<DH, DH_del> dh2(EVP_PKEY_get1_DH(evp2.get()), DH_free);
-	if (!dh2.get())
-		return build_error("gen_dh_key::EVP_PKEY_get1_DH: invalid DH pubkey " + hex, nullptr);
 	f.reset(); // closes f and fd
 
 	string dhpriv = dhdir + "/dh.priv.pem";
@@ -904,13 +902,13 @@ DHbox *persona::gen_dh_key(const EVP_MD *md)
 		return build_error("gen_dh_key::fread: invalid DH privkey " + hex, nullptr);
 	string priv_pem = string(buf, r);
 
-	DHbox *dhb = new DHbox(dh2.release(), dh1.release());
-	dhb->pub_pem = pub_pem;
-	dhb->priv_pem = priv_pem;
-	dhb->hex = hex;
-	keys[hex] = dhb;
+	PKEYbox *pbox = new PKEYbox(evp2.release(), evp1.release());
+	pbox->pub_pem = pub_pem;
+	pbox->priv_pem = priv_pem;
+	pbox->hex = hex;
+	keys[hex] = pbox;
 
-	return dhb;
+	return pbox;
 }
 
 
@@ -927,18 +925,42 @@ void persona::used_key(const string &hexid, bool u)
 }
 
 
-DHbox *persona::add_dh_pubkey(const string &hash, const string &pem)
+PKEYbox *persona::add_dh_pubkey(const string &hash, string &pem)
 {
 	return add_dh_pubkey(algo2md(hash), pem);
 }
 
 
-// Create a new DH pubkey (using existing persona DH params) to persona dir.
-// pub_b64 is taken from the message; key will later be used to send messages
-DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
+// import a new (EC)DH pub key from a message to be later used for sending
+// encrypted messages to this persona
+PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 {
 	struct stat st;
 	int fd = -1;
+
+	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+	if (!bio.get())
+		return build_error("add_dh_pubkey: OOM", nullptr);
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+	if (!evp_pub.get())
+		return build_error("add_dh_pubkey::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
+
+	// DH keys are hashed differently than EC(DH) keys, as DH pubkey consists of a single
+	// BN, ECDH consists of a pair of BNs (EC point)
+	string hex = "";
+	if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_DH) {
+		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
+		if (!dh.get() || bn2hexhash(md, dh->pub_key, hex) < 0)
+			return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", nullptr);
+	} else if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_EC) {
+		if (normalize_and_hexhash(md, pub_pem, hex) < 0)
+			return build_error("add_dh_key:: Error hashing ECDH pubkey.", nullptr);;
+	} else
+		return build_error("add_dh_pubkey: Unknown key type.", nullptr);
+
+	// some remote persona tries to import a key twice?
+	if (keys.count(hex) > 0)
+		return keys[hex];
 
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
@@ -952,25 +974,7 @@ DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 		return build_error("add_dh_key::fdopen:", nullptr);
 	if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
 		return build_error("add_dh_key::fwrite:", nullptr);
-	rewind(f.get());
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp.get())
-		return build_error("add_dh_key::PEM_read_PUBKEY: Invalid PEM pubkey", nullptr);
-
-	unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp.get()), DH_free);
-	if (!dh.get())
-		return build_error("add_dh_key::EVP_PKEY_get1_DY: Invalid PEM pubkey", nullptr);
-
-	string hex = "";
-	if (bn2hexhash(md, dh->pub_key, hex) < 0)
-		return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", nullptr);
-
-	// some remote persona tries to import a key twice?
-	if (keys.count(hex) > 0) {
-		unlink(dhfile.c_str());
-		rmdir(tmpdir.c_str());
-		return keys[hex];
-	}
+	f.reset();
 
 	string hexdir = cfgbase + "/" + id + "/" + hex;
 
@@ -978,14 +982,14 @@ DHbox *persona::add_dh_pubkey(const EVP_MD *md, const string &pub_pem)
 	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		unlink(dhfile.c_str());
 		rmdir(tmpdir.c_str());
-		return build_error("add_dh_key: Error storing DH pubkey " + hex, nullptr);
+		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, nullptr);
 	}
 
-	DHbox *dhb = new DHbox(dh.release(), nullptr);
-	dhb->pub_pem = pub_pem;
-	dhb->hex = hex;
-	keys[hex] = dhb;
-	return dhb;
+	PKEYbox *pbox = new PKEYbox(evp_pub.release(), nullptr);
+	pbox->pub_pem = pub_pem;
+	pbox->hex = hex;
+	keys[hex] = pbox;
+	return pbox;
 }
 
 
@@ -1034,7 +1038,7 @@ int persona::del_dh_priv(const string &hex)
 	auto i = keys.find(hex);
 	if (i != keys.end()) {
 		i->second->priv_pem = "";
-		DH_free(i->second->priv); i->second->priv = nullptr;
+		EVP_PKEY_free(i->second->priv); i->second->priv = nullptr;
 	}
 	return 0;
 }
@@ -1051,7 +1055,7 @@ int persona::del_dh_pub(const string &hex)
 	auto i = keys.find(hex);
 	if (i != keys.end()) {
 		i->second->pub_pem = "";
-		DH_free(i->second->pub); i->second->pub = nullptr;
+		EVP_PKEY_free(i->second->pub); i->second->pub = nullptr;
 	}
 	return 0;
 }

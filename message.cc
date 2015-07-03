@@ -132,7 +132,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	char aad_tag[16];
 	RSA *rsa = nullptr;
 	EVP_CIPHER_CTX c_ctx;
-	DHbox *dh = nullptr;
+	// an ECDH or DH key
+	PKEYbox *ec_dh = nullptr;
 	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
 	string::size_type aad_tag_insert_pos = string::npos;
 	bool no_dh_key = (kex_id_hex == marker::rsa_kex_id);
@@ -166,8 +167,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return build_error("encrypt:: missing key for dst persona " + dst_id_hex, -1);
 
 	if (!no_dh_key) {
-		if (!(dh = dst_persona->find_dh_key(kex_id_hex)))
-			return build_error("encrypt: Invalid DH key id " + kex_id_hex, -1);
+		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
+			return build_error("encrypt: Invalid (EC)DH key id " + kex_id_hex, -1);
 	}
 
 	if (RAND_bytes(iv, sizeof(iv)) != 1)
@@ -204,27 +205,30 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	bool has_aad = (calgo.find("gcm") != string::npos);
 
-	// append public DH keys
-	for (auto it = dh_keys.begin(); it != dh_keys.end(); ++it) {
+	// append public (EC)DH keys
+	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end(); ++it) {
 		outmsg += *it;
 		outmsg += "\n";
 	}
 
 
-	// Kex (DH if avail, RSA as fallback)
+	// Kex (DH if avail, RSA as fallback for DH. EC personas have no RSA fallback)
 	int slen = OPMSG_RSA_ENCRYPTED_KEYLEN;
 	unique_ptr<unsigned char[]> secret(new (nothrow) unsigned char[slen]);
 	if (!secret.get())
 		return build_error("encrypt: OOM", -1);
 	outmsg += marker::kex_begin;
-	if (dh) {
-		unique_ptr<DH, DH_del> mydh(DHparams_dup(dh->pub), DH_free);
+	if (ec_dh && (EVP_PKEY_type(ec_dh->pub->type) == EVP_PKEY_DH)) {
+		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh->pub), DH_free);
+		if (!dh.get())
+			return build_error("encrypt: OOM", -1);
+		unique_ptr<DH, DH_del> mydh(DHparams_dup(dh.get()), DH_free);
 		if (!mydh.get() || DH_generate_key(mydh.get()) != 1 || DH_check(mydh.get(), &ecode) != 1)
 			return build_error("encrypt::DH_generate_key: Cannot generate DH key ", -1);
 		// re-calculate size for secret in the DH case; it differes
 		slen = DH_size(mydh.get());
 		secret.reset(new (nothrow) unsigned char[slen]);
-		if (!secret.get() || DH_compute_key(secret.get(), dh->pub->pub_key, mydh.get()) != slen)
+		if (!secret.get() || DH_compute_key(secret.get(), dh->pub_key, mydh.get()) != slen)
 			return build_error("encrypt::DH_compute_key: Cannot compute DH key ", -1);
 
 		int binlen = BN_num_bytes(mydh->pub_key);
@@ -232,6 +236,33 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		if (!bin.get() || BN_bn2bin(mydh->pub_key, bin.get()) != binlen)
 			return build_error("encrypt::BN_bn2bin: Cannot convert DH key ", -1);
 		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
+	} else if (ec_dh && (EVP_PKEY_type(ec_dh->pub->type) == EVP_PKEY_EC)) {
+/*
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh->pub, nullptr), EVP_PKEY_CTX_free);
+		if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
+			return build_error("", -1);
+		EVP_PKEY *ppkey = nullptr;
+		if (EVP_PKEY_keygen(ctx1.get(), &ppkey) != 1)
+			return build_error("", -1);
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(*ppkey, nullptr), EVP_PKEY_CTX_free);
+
+		// So the derive call will put the pure bignum. We'll use our own KDF.
+		if (EVP_PKEY_type(ec_dh->pub->type == EVP_PKEY_DH)
+			EVP_PKEY_CTX_ctrl(ctx2.get(), EVP_PKEY_CTRL_DH_KDF_TYPE, EVP_PKEY_DH_KDF_NONE, nullptr);
+		if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh->pub) != 1)
+			return build_error("encrypt::EVP_PKEY_derive_set_peer: ", -1);
+
+		// find len
+		size_t len = 0;
+		if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
+			return build_error("decrypt::EVP_PKEY_derive: ", -1);
+		if (len > 0x100000)
+			return build_error("decrypt: Insane large derived keylen.", -1);
+		secret.reset(new (nothrow) unsigned char[len]);
+		if (!secret.get() || EVP_PKEY_derive(ctx2.get(), secret.get(), &len) != 1)
+			return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+		slen = (int)len;
+*/
 	} else {
 		if (RAND_bytes(secret.get(), slen) != 1)
 			return build_error("encrypt::RAND_bytes: ", -1);
@@ -349,7 +380,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 int message::decrypt(string &raw)
 {
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
-	DHbox *dh = nullptr;
+	PKEYbox *ec_dh = nullptr;
 	RSA *rsa = nullptr;
 	EVP_MD_CTX md_ctx;
 	EVP_CIPHER_CTX c_ctx;
@@ -470,7 +501,7 @@ int message::decrypt(string &raw)
 
 	src_name = src_persona->get_name();
 
-	// new dh keys included for later DH kex?
+	// new (ec)dh keys included for later DH kex?
 	string newdh = "";
 	for (;;) {
 		if ((pos = raw.find(marker::ec_dh_begin)) == string::npos)
@@ -481,10 +512,10 @@ int message::decrypt(string &raw)
 			return build_error("decrypt: Not in OPMSGv1 format (12).", -1);
 		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
-		dh_keys.push_back(newdh);
+		ecdh_keys.push_back(newdh);
 		if (!src_persona->add_dh_pubkey(khash, newdh))
-			dh_keys.pop_back();
-		if (dh_keys.size() >= max_new_dh_keys)
+			ecdh_keys.pop_back();
+		if (ecdh_keys.size() >= max_new_dh_keys)
 			break;
 	}
 
@@ -540,9 +571,9 @@ int message::decrypt(string &raw)
 	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0)
 		return build_error("decrypt:: Unknown dst persona " + dst_id_hex, -1);
 	if (has_dh_key) {
-		if (!(dh = dst_persona->find_dh_key(kex_id_hex)))
+		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
 			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, -1);
-		if (!dh->can_decrypt())
+		if (!ec_dh->can_decrypt())
 			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, -1);
 	}
 
@@ -579,15 +610,39 @@ int message::decrypt(string &raw)
 		// The input secret buffer that was sent, have had a fixed size of this:
 		slen = OPMSG_RSA_ENCRYPTED_KEYLEN;
 	} else {
-		// do the DH kex
+		// do the (EC)DH kex
 		unique_ptr<BIGNUM, BIGNUM_del> bn(BN_bin2bn(reinterpret_cast<const unsigned char *>(kexdh.c_str()), kexdh.size(), nullptr), BN_free);
 		if (!bn.get())
 			return build_error("decrypt::BN_bin2bn: ", -1);
-		slen = DH_size(dh->priv);
-		secret.reset(new (nothrow) unsigned char[slen]);
-		// secret is binary representation of a BN
-		if (!secret.get() || DH_compute_key(secret.get(), bn.get(), dh->priv) != slen)
-			return build_error("decrypt::DH_compute_key for key " + kex_id_hex, -1);
+		unique_ptr<EVP_PKEY, EVP_PKEY_del> peer_key(EVP_PKEY_new(), EVP_PKEY_free);
+		if (!peer_key.get())
+			return build_error("decrypt: OOM", -1);
+		// RSA personas use DH Kex
+		if (dst_persona->get_type() == marker::rsa) {
+			DH *dh = DH_new();
+			if (!dh)
+				return build_error("decrypt: OOM", -1);
+			dh->pub_key = bn.release();
+			EVP_PKEY_assign_DH(peer_key.get(), dh);
+		}
+//XXX: set EC peer pubkey
+
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh->priv, nullptr), EVP_PKEY_CTX_free);
+		if (!ctx.get() || EVP_PKEY_derive_init(ctx.get()) != 1)
+			return build_error("decrypt::EVP_PKEY_derive_init: ", -1);
+		if (EVP_PKEY_derive_set_peer(ctx.get(), peer_key.get()) != 1)
+			return build_error("decrypt::EVP_PKEY_derive_set_peer: ", -1);
+
+		// find len
+		size_t len = 0;
+		if (EVP_PKEY_derive(ctx.get(), nullptr, &len) != 1)
+			return build_error("decrypt::EVP_PKEY_derive: ", -1);
+		if (len > 0x100000)
+			return build_error("decrypt: Insane large derived keylen.", -1);
+		secret.reset(new (nothrow) unsigned char[len]);
+		if (!secret.get() || EVP_PKEY_derive(ctx.get(), secret.get(), &len) != 1)
+			return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+		slen = (int)len;
 	}
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];

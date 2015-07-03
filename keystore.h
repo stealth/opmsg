@@ -160,7 +160,7 @@ public:
 class persona {
 
 	std::string id, name, link_src, ptype;
-	std::map<std::string, DHbox *> keys;
+	std::map<std::string, PKEYbox *> keys;
 
 	PKEYbox *pkey;
 	DHbox *dh_params;
@@ -269,15 +269,15 @@ public:
 
 	DHbox *new_dh_params(const std::string &pem);
 
-	DHbox *add_dh_pubkey(const std::string &hash, const std::string &pem);
+	PKEYbox *add_dh_pubkey(const std::string &hash, std::string &pem);
 
-	DHbox *add_dh_pubkey(const EVP_MD *md, const std::string &pem);
+	PKEYbox *add_dh_pubkey(const EVP_MD *md, std::string &pem);
 
-	DHbox *gen_dh_key(const std::string &hash);
+	PKEYbox *gen_dh_key(const std::string &hash);
 
-	DHbox *gen_dh_key(const EVP_MD *md);
+	PKEYbox *gen_dh_key(const EVP_MD *md);
 
-	DHbox *find_dh_key(const std::string &hex);
+	PKEYbox *find_dh_key(const std::string &hex);
 
 	int del_dh_id(const std::string &hex);
 
@@ -291,11 +291,11 @@ public:
 
 	int link(const std::string &hex);
 
-	std::map<std::string, DHbox *>::iterator first_key();
+	std::map<std::string, PKEYbox *>::iterator first_key();
 
-	std::map<std::string, DHbox *>::iterator end_key();
+	std::map<std::string, PKEYbox *>::iterator end_key();
 
-	std::map<std::string, DHbox *>::iterator next_key(const std::map<std::string, DHbox *>::iterator &);
+	std::map<std::string, PKEYbox *>::iterator next_key(const std::map<std::string, PKEYbox *>::iterator &);
 
 	int size()
 	{
