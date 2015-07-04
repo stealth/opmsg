@@ -240,7 +240,9 @@ public:
 
 	bool can_gen_dh()
 	{
-		return dh_params != nullptr && dh_params->pub != nullptr;
+		if (ptype == marker::rsa)
+			return dh_params != nullptr && dh_params->pub != nullptr;
+		return true;
 	}
 
 	PKEYbox *set_pkey(EVP_PKEY *, EVP_PKEY *);
@@ -276,6 +278,8 @@ public:
 	PKEYbox *gen_dh_key(const std::string &hash);
 
 	PKEYbox *gen_dh_key(const EVP_MD *md);
+
+	PKEYbox *gen_ecdh_key(const EVP_MD *md);
 
 	PKEYbox *find_dh_key(const std::string &hex);
 

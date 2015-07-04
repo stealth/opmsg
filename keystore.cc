@@ -206,7 +206,8 @@ int keystore::load()
 }
 
 
-int keystore::gen_ec(string &pub, string &priv)
+/* global version, as its needed by persona and keystore class */
+int gen_ec(string &pub, string &priv, string &err)
 {
 	char *ptr = nullptr;
 
@@ -217,25 +218,39 @@ int keystore::gen_ec(string &pub, string &priv)
 		RAND_load_file("/dev/random", 8);
 
 	unique_ptr<EC_GROUP, EC_GROUP_del> ecgrp(EC_GROUP_new_by_curve_name(config::curve_nid), EC_GROUP_free);
-	if (!ecgrp.get())
-		return build_error("gen_ec::EC_GROUP_new_by_curve_name:", -1);
+	if (!ecgrp.get()) {
+		err += build_error("gen_ec::EC_GROUP_new_by_curve_name:");
+		return -1;
+	}
 	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(config::curve_nid), EC_KEY_free);
-	if (!eckey.get())
-		return build_error("gen_ec::EC_KEY_new_by_curve_name:", -1);
+	if (!eckey.get()) {
+		err += build_error("gen_ec::EC_KEY_new_by_curve_name:");
+		return -1;
+	}
 
-	if (EC_KEY_set_group(eckey.get(), ecgrp.get()) != 1)
-		return build_error("gen_ec::EC_KEY_set_group:", -1);
-	if (EC_KEY_generate_key(eckey.get()) != 1)
-		return build_error("gen_ec::EC_KEY_generate_key:", -1);
-	if (EC_KEY_check_key(eckey.get()) != 1)
-		return build_error("gen_ec::EC_KEY_check_key:", -1);
+	if (EC_KEY_set_group(eckey.get(), ecgrp.get()) != 1) {
+		err += build_error("gen_ec::EC_KEY_set_group:");
+		return -1;
+	}
+	if (EC_KEY_generate_key(eckey.get()) != 1) {
+		err += build_error("gen_ec::EC_KEY_generate_key:");
+		return -1;
+	}
+	if (EC_KEY_check_key(eckey.get()) != 1) {
+		err += build_error("gen_ec::EC_KEY_check_key:");
+		return -1;
+	}
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
 	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
-	if (!evp.get() || !bio.get())
-		return build_error("gen_ec: OOM", -1);
-	if (EVP_PKEY_set1_EC_KEY(evp.get(), eckey.get()) != 1)
-		return build_error("gen_ec::EVP_PKEY_set1_EC_KEY: Error generating EC key", -1);
+	if (!evp.get() || !bio.get()) {
+		err += build_error("gen_ec: OOM");
+		return -1;
+	}
+	if (EVP_PKEY_set1_EC_KEY(evp.get(), eckey.get()) != 1) {
+		err += build_error("gen_ec::EVP_PKEY_set1_EC_KEY: Error generating EC key");
+		return -1;
+	}
 
 /*	unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(evp.get(), nullptr), EVP_PKEY_CTX_free);
 	if (!ctx.get())
@@ -243,24 +258,36 @@ int keystore::gen_ec(string &pub, string &priv)
 	if (EVP_PKEY_CTX_ctrl_str(ctx.get(), "ec_param_enc", "explicit") <= 0)
 		return build_error("gen_ec::EVP_PKEY_CTX_ctrl_str:", -1);
 */
-	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1)
-		return build_error("gen_ec::PEM_write_bio_PUBKEY: Error generating EC key", -1);
+	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1) {
+		err += build_error("gen_ec::PEM_write_bio_PUBKEY: Error generating EC key");
+		return -1;
+	}
 
 	long l = BIO_get_mem_data(bio.get(), &ptr);
 	pub = string(ptr, l);
 
 	bio.reset(BIO_new(BIO_s_mem()));
-	if (!bio.get())
-		return build_error("gen_ec::BIO_new: OOM", -1);
+	if (!bio.get()) {
+		err += build_error("gen_ec::BIO_new: OOM");
+		return -1;
+	}
 
-	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
-		return build_error("gen_ec::PEM_write_bio_PrivateKey: Error generating EC key", -1);
+	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1) {
+		err += build_error("gen_ec::PEM_write_bio_PrivateKey: Error generating EC key");
+		return -1;
+	}
 
 	l = BIO_get_mem_data(bio.get(), &ptr);
 	priv = string(ptr, l);
 
 	return 0;
+}
 
+
+int keystore::gen_ec(string &pub, string &priv)
+{
+	err = "keystore::";
+	return opmsg::gen_ec(pub, priv, err);
 }
 
 
@@ -826,6 +853,80 @@ PKEYbox *persona::gen_dh_key(const string &hash)
 }
 
 
+PKEYbox *persona::gen_ecdh_key(const EVP_MD *md)
+{
+	struct stat st;
+	int fd = -1;
+
+	string pub_pem = "", priv_pem = "", hex = "";
+
+	err = "persona::gen_ecdh_key::";
+	if (opmsg::gen_ec(pub_pem, priv_pem, err) < 0)
+		return nullptr;
+	err = "";
+	if (normalize_and_hexhash(md, pub_pem, hex) < 0)
+		return build_error("gen_ecdh_key::normalize_and_hexhash: Cant hash key.", nullptr);
+
+	// unlikely...
+	if (keys.count(hex) > 0)
+		return keys[hex];
+
+	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+	if (!bio.get())
+		return build_error("gen_ecdh_key: OOM", nullptr);
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+	if (!evp_pub.get())
+		return build_error("gen_ecdh_key::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
+
+	bio.reset(BIO_new_mem_buf(strdup(priv_pem.c_str()), priv_pem.size()));
+	if (!bio.get())
+		return build_error("gen_ecdh_key: OOM", nullptr);
+
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+	if (!evp_priv.get())
+		return build_error("gen_ecdh_key::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
+
+	string tmpdir = "";
+	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
+		return build_error("gen_ecdh_key::mkdir:", nullptr);
+
+	string dhfile1 = tmpdir + "/dh.pub.pem";
+	if ((fd = open(dhfile1.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
+		return build_error("gen_ecdh_key::open:", nullptr);
+	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
+	if (!f.get())
+		return build_error("gen_ecdh_key::fdopen:", nullptr);
+	if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
+		return build_error("gen_ecdh_key::fwrite:", nullptr);
+	f.reset();
+	string dhfile2 = tmpdir + "/dh.priv.pem";
+	if ((fd = open(dhfile2.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
+		return build_error("gen_ecdh_key::open:", nullptr);
+	f.reset(fdopen(fd, "r+"));
+	if (!f.get())
+		return build_error("gen_ecdh_key::fdopen:", nullptr);
+	if (fwrite(priv_pem.c_str(), priv_pem.size(), 1, f.get()) != 1)
+		return build_error("gen_ecdh_key::fwrite:", nullptr);
+
+	string hexdir = cfgbase + "/" + id + "/" + hex;
+
+	// apparently the key was already imported once, so dont do it again
+	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
+		unlink(dhfile1.c_str());
+		unlink(dhfile2.c_str());
+		rmdir(tmpdir.c_str());
+		return build_error("gen_ecdh_key: Error storing ECDH keys " + hex, nullptr);
+	}
+
+	PKEYbox *pbox = new PKEYbox(evp_pub.release(), evp_priv.release());
+	pbox->pub_pem = pub_pem;
+	pbox->priv_pem = priv_pem;
+	pbox->hex = hex;
+	keys[hex] = pbox;
+	return pbox;
+}
+
+
 // create an entirely new DH key (based on DH params) for this persona. Key will
 // later be used to decrypt incoming msg, using existing private half of saved DH
 PKEYbox *persona::gen_dh_key(const EVP_MD *md)
@@ -833,6 +934,9 @@ PKEYbox *persona::gen_dh_key(const EVP_MD *md)
 	char buf[8192];
 	int fd = -1, ecode = 0;
 	size_t r = 0;
+
+	if (ptype == marker::ec)
+		return gen_ecdh_key(md);
 
 	if (!dh_params)
 		return build_error("gen_dh_key: Invalid persona. No DH params for " + id, nullptr);

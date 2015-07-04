@@ -45,6 +45,8 @@ const EVP_CIPHER *algo2cipher(const std::string &);
 
 const EVP_MD *algo2md(const std::string &);
 
+std::string build_error(const std::string &msg);
+
 extern const std::string prefix;
 
 }

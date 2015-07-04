@@ -21,11 +21,13 @@
 #include <map>
 #include <string>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 
 
 extern "C" {
 #include <openssl/evp.h>
+#include <openssl/err.h>
 }
 
 
@@ -161,6 +163,21 @@ bool is_valid_halgo(const string &s)
 	};
 
 	return m.count(s) > 0;
+}
+
+string build_error(const string &msg)
+{
+	int e = 0;
+	string err = msg;
+	if ((e = ERR_get_error())) {
+		ERR_load_crypto_strings();
+		err += ":";
+		err += ERR_error_string(e, nullptr);
+	} else if (errno) {
+		err += ":";
+		err += strerror(errno);
+	}
+	return err;
 }
 
 
