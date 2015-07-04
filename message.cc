@@ -237,32 +237,43 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			return build_error("encrypt::BN_bn2bin: Cannot convert DH key ", -1);
 		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
 	} else if (ec_dh && (EVP_PKEY_type(ec_dh->pub->type) == EVP_PKEY_EC)) {
-/*
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh->pub, nullptr), EVP_PKEY_CTX_free);
 		if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
-			return build_error("", -1);
+			return build_error("encrypt::EVP_PKEY_keygen_init:", -1);
 		EVP_PKEY *ppkey = nullptr;
 		if (EVP_PKEY_keygen(ctx1.get(), &ppkey) != 1)
-			return build_error("", -1);
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(*ppkey, nullptr), EVP_PKEY_CTX_free);
+			return build_error("encrypt::EVP_PKEY_keygen:", -1);
+		unique_ptr<EVP_PKEY, EVP_PKEY_del> my_ec(ppkey, EVP_PKEY_free);
+		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(my_ec.get(), nullptr), EVP_PKEY_CTX_free);
 
-		// So the derive call will put the pure bignum. We'll use our own KDF.
-		if (EVP_PKEY_type(ec_dh->pub->type == EVP_PKEY_DH)
-			EVP_PKEY_CTX_ctrl(ctx2.get(), EVP_PKEY_CTRL_DH_KDF_TYPE, EVP_PKEY_DH_KDF_NONE, nullptr);
+		/*if (EVP_PKEY_type(ec_dh->pub->type == EVP_PKEY_DH)
+			EVP_PKEY_CTX_ctrl(ctx2.get(), EVP_PKEY_CTRL_DH_KDF_TYPE, EVP_PKEY_DH_KDF_NONE, nullptr);*/
+		if (EVP_PKEY_derive_init(ctx2.get()) != 1)
+			return build_error("encrypt::EVP_PKEY_derive_init: ", -1);
 		if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh->pub) != 1)
 			return build_error("encrypt::EVP_PKEY_derive_set_peer: ", -1);
 
 		// find len
 		size_t len = 0;
 		if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
-			return build_error("decrypt::EVP_PKEY_derive: ", -1);
+			return build_error("encrypt::EVP_PKEY_derive: ", -1);
 		if (len > 0x100000)
-			return build_error("decrypt: Insane large derived keylen.", -1);
+			return build_error("encrypt: Insane large derived keylen.", -1);
 		secret.reset(new (nothrow) unsigned char[len]);
 		if (!secret.get() || EVP_PKEY_derive(ctx2.get(), secret.get(), &len) != 1)
-			return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+			return build_error("encrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
 		slen = (int)len;
-*/
+		unique_ptr<EC_KEY, EC_KEY_del> ec(EVP_PKEY_get1_EC_KEY(my_ec.get()), EC_KEY_free);
+		unique_ptr<BIGNUM, BIGNUM_del> bn(EC_POINT_point2bn(EC_KEY_get0_group(ec.get()),
+		                                                    EC_KEY_get0_public_key(ec.get()),
+		                                                    POINT_CONVERSION_COMPRESSED, nullptr, nullptr), BN_free);
+		if (!bn.get())
+			return build_error("encrypt::EC_POINT_point2bn:", -1);
+		int binlen = BN_num_bytes(bn.get());
+		unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
+		if (!bin.get() || BN_bn2bin(bn.get(), bin.get()) != binlen)
+			return build_error("encrypt::BN_bn2bin: Cannot convert ECDH key ", -1);
+		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
 	} else {
 		if (RAND_bytes(secret.get(), slen) != 1)
 			return build_error("encrypt::RAND_bytes: ", -1);
@@ -501,7 +512,7 @@ int message::decrypt(string &raw)
 
 	src_name = src_persona->get_name();
 
-	// new (ec)dh keys included for later DH kex?
+	// new (ec)dh keys included for later (EC)DH kex?
 	string newdh = "";
 	for (;;) {
 		if ((pos = raw.find(marker::ec_dh_begin)) == string::npos)
@@ -542,7 +553,7 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Not in OPMSGv1 format (16).", -1);
 	kex_id_hex = s;
 
-	// the DH public part
+	// the (EC)DH public part
 	if ((pos = raw.find(marker::kex_begin)) == string::npos || (nl = raw.find(marker::kex_end, pos)) == string::npos)
 		return build_error("decrypt: Not in OPMSGv1 format (17).", -1);
 	if (nl - pos > max_sane_string)
@@ -577,7 +588,7 @@ int message::decrypt(string &raw)
 			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, -1);
 	}
 
-	// Kex (DH if avail, RSA as fallback)
+	// Kex: (EC)DH if avail, RSA as fallback
 	int slen = 0;
 	unique_ptr<unsigned char[]> secret(nullptr);
 	if (!has_dh_key) {
@@ -617,15 +628,30 @@ int message::decrypt(string &raw)
 		unique_ptr<EVP_PKEY, EVP_PKEY_del> peer_key(EVP_PKEY_new(), EVP_PKEY_free);
 		if (!peer_key.get())
 			return build_error("decrypt: OOM", -1);
-		// RSA personas use DH Kex
-		if (dst_persona->get_type() == marker::rsa) {
+
+		// BN is a BN pubkey in DH case...
+		if (EVP_PKEY_type(ec_dh->priv->type) == EVP_PKEY_DH) {
 			DH *dh = DH_new();
 			if (!dh)
 				return build_error("decrypt: OOM", -1);
 			dh->pub_key = bn.release();
 			EVP_PKEY_assign_DH(peer_key.get(), dh);
+		// ...and a compressed EC_POINT pubkey in ECDH case
+		} else {
+			unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh->priv), EC_KEY_free);
+			if (!my_ec.get())
+				return build_error("decrypt::EVP_PKEY_get1_EC_KEY:", -1);
+			unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(EC_KEY_get0_group(my_ec.get()), bn.get(), nullptr, nullptr), EC_POINT_free);
+			if (!ecp.get())
+				return build_error("decrypt::EC_POINT_bn2point:", -1);
+			unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_dup(my_ec.get()), EC_KEY_free);
+			if (!peer_ec.get())
+				return build_error("decrypt: OOM", -1);
+			EC_KEY_set_private_key(peer_ec.get(), nullptr);
+			if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
+				return build_error("decrypt::EC_KEY_set_public_key:", -1);
+			EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
 		}
-//XXX: set EC peer pubkey
 
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh->priv, nullptr), EVP_PKEY_CTX_free);
 		if (!ctx.get() || EVP_PKEY_derive_init(ctx.get()) != 1)

@@ -479,6 +479,10 @@ map<string, persona *>::iterator keystore::next_pers(const map<string, persona *
 
 PKEYbox *persona::find_dh_key(const string &hex)
 {
+	// In case EC persona peer is out of ephemeral ECDH keys
+	if (hex == marker::ec_kex_id && ptype == marker::ec)
+		return pkey;
+
 	auto i = keys.find(hex);
 	if (i == keys.end())
 		return build_error("find_dh_key: No such key.", nullptr);
@@ -693,7 +697,7 @@ int persona::load(const std::string &dh_hex)
 	// if a certain dh_hex was given, only load this one. A dh_hex of special kind, only
 	// make us load RSA keys
 	if (dh_hex.size() > 0) {
-		if (dh_hex == marker::rsa_kex_id)
+		if (dh_hex == marker::rsa_kex_id || dh_hex == marker::ec_kex_id)
 			return 0;
 		return this->load_dh(dh_hex);
 	}

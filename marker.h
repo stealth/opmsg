@@ -52,6 +52,8 @@ extern std::string aad_tag;
 
 extern std::string rsa_kex_id;
 
+extern std::string ec_kex_id;
+
 extern std::string algos;
 
 // persona types

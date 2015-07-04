@@ -331,7 +331,10 @@ int do_encrypt(const string &dst_id)
 	msg.src_id(src_p->get_id());
 	msg.dst_id(dst_p->get_id());
 
-	if (!config::rsa_override) {
+	if (!config::rsa_override || dst_p->get_type() == marker::ec) {
+		if (dst_p->get_type() == marker::ec)
+			kex_id = marker::ec_kex_id;
+
 		for (auto i = dst_p->first_key(); i != dst_p->end_key(); i = dst_p->next_key(i)) {
 			if (i->second->can_encrypt()) {
 				kex_id = i->first;
@@ -342,7 +345,7 @@ int do_encrypt(const string &dst_id)
 			cerr<<prefix<<"warn: Out of DH keys for target persona. Using RSA fallback.\n";
 	}
 
-	// rsa marker in case no DH key was found
+	// rsa/ec marker in case no ephemeral (EC)DH key was found
 	msg.kex_id(kex_id);
 
 	// Add new (EC)DH keys for upcoming Kex in future

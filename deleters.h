@@ -52,6 +52,8 @@ extern "C" typedef void (*EC_GROUP_del)(EC_GROUP *);
 
 extern "C" typedef void (*EC_KEY_del)(EC_KEY *);
 
+extern "C" typedef void (*EC_POINT_del)(EC_POINT *);
+
 extern "C" typedef int (*FILE_del)(FILE *);
 
 extern "C" int ffclose(FILE *f);

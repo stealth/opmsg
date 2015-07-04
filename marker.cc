@@ -51,8 +51,11 @@ string dst_id = "dst-id=";
 string kex_id = "kex-id=";
 string aad_tag = "gcm-aad-tag=";
 
-// in case no DH key is left, this signals standart RSA encrypted secret
+// if no ephemeral DH keys are left, this signals standart RSA encrypted secret
 string rsa_kex_id = "00000000";
+
+// if no ephemeral ECDH keys are left, the EC persona key is used for ECDH kex
+string ec_kex_id = "11111111";
 
 
 // rythmz=persona-hash:key-hash:sign-hash:crypto:IV
