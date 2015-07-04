@@ -54,9 +54,15 @@ std::string outfile = "/dev/stdout";
 std::string idformat = "split";
 std::string my_id = "";
 
-std::string curve = "brainpoolP320r1";
 
+
+#ifdef NID_brainpoolP512t1
 int curve_nid = NID_brainpoolP320r1;
+std::string curve = "brainpoolP320r1";
+#else
+int curve_nid = NID_secp521r1;
+std::string curve = "secp521r1";
+#endif
 
 bool burn = 0;
 
@@ -121,7 +127,11 @@ int parse_config(const string &cfgbase)
 			config::rsa_override = 1;
 		else if (sline == "burn")
 			config::burn = 1;
-		else if (sline == "curve=brainpoolP320r1") {
+		else if (sline == "curve=secp521r1") {
+			config::curve = "secp521r1";
+			config::curve_nid = NID_secp521r1;
+#ifdef NID_brainpoolP512t1
+		} else if (sline == "curve=brainpoolP320r1") {
 			config::curve = "brainpoolP320r1";
 			config::curve_nid = NID_brainpoolP320r1;
 		} else if (sline == "curve=brainpoolP384r1") {
@@ -139,6 +149,7 @@ int parse_config(const string &cfgbase)
 		} else if (sline == "curve=brainpoolP512t1") {
 			config::curve = "brainpoolP512t1";
 			config::curve_nid = NID_brainpoolP512t1;
+#endif
 		}
 	}
 	return 0;

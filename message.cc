@@ -225,7 +225,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		unique_ptr<DH, DH_del> mydh(DHparams_dup(dh.get()), DH_free);
 		if (!mydh.get() || DH_generate_key(mydh.get()) != 1 || DH_check(mydh.get(), &ecode) != 1)
 			return build_error("encrypt::DH_generate_key: Cannot generate DH key ", -1);
-		// re-calculate size for secret in the DH case; it differes
+		// re-calculate size for secret in the DH case; it differs
 		slen = DH_size(mydh.get());
 		secret.reset(new (nothrow) unsigned char[slen]);
 		if (!secret.get() || DH_compute_key(secret.get(), dh->pub_key, mydh.get()) != slen)
