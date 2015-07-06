@@ -60,6 +60,11 @@ std::string my_id = "";
 int curve_nid = NID_brainpoolP320r1;
 std::string curve = "brainpoolP320r1";
 #else
+
+#warning "Your libcrypto library is outdated and has no support for Brainpool EC curves."
+#warning "Falling back to NIST curve secp521r. You should consider cloning libressl or"
+#warning "openssl git and build your own libcrypto setup in order to get full ECC support."
+
 int curve_nid = NID_secp521r1;
 std::string curve = "secp521r1";
 #endif
