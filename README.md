@@ -11,8 +11,8 @@ different.
 
 Features:
 
-* Perfect Forward Secrecy (PFS) by means of DH Kex
-* RSA fallback if no DH keys left
+* Perfect Forward Secrecy (PFS) by means of ECDH or DH Kex
+* native EC or RSA fallback if no (EC)DH keys left
 * fully compliant to existing SMTP/IMAP/POP etc. standards;
   no need to touch any mail daemon/client/agent code
 * signing messages is mandatory
@@ -21,7 +21,7 @@ Features:
 * adds the possibility to (re-)route messages different
   from mail address to defeat meta data collection
 * configurable well-established hash and crypto algorithms
-  and key lengths (RSA, DH)
+  and key lengths (RSA, DH, EC, AES)
 * straight forward and open key storage, basically also managable via
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
@@ -41,7 +41,7 @@ generation. To disable `BN_GENCB_new`, set `HAVE_BN_GENCB_NEW` to false:
 `make DEFS=-DHAVE_BN_GENCB_NEW=0`. So on _OpenBSD_, you would run
 `make CXX=eg++ LD=eg++ DEFS=-DHAVE_BN_GENCB_NEW=0`. On _OSX_ you should install
 your own _OpenSSL_, as Apple marks _OpenSSL_ as deprecated in favor of their own
-crypto libs.
+crypto libs. You may also set all these options in the `Makefile`.
 
 ```
 $ make
@@ -49,21 +49,21 @@ $ make
 $ cp opmsg /usr/local/bin/
 $ opmsg
 
-opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 
-Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
-                [--verify file] <--persona ID> [--import] [--list] [--listpgp]
-                [--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]
-                [--phash name [--name name] [--in infile] [--out outfile]
-                [--link target id]
+Usage: opmsg [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
+        [--verify file] <--persona ID> [--import] [--list] [--listpgp]
+        [--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]
+        [--phash name [--name name] [--in infile] [--out outfile]
+        [--link target id] [--burn]
 
-        --confdir,      -c      defaults to ~/.opmsg
+        --confdir,      -c      (must come first) defaults to ~/.opmsg
         --rsa,          -R      RSA override (dont use existing DH keys)
-        --encrypt,      -E      recipients persona hex id (-i to -o, requires -P)
+        --encrypt,      -E      recipients persona hex id (-i to -o, needs -P)
         --decrypt,      -D      decrypt --in to --out
         --sign,         -S      create detached signature file from -i via -P
-        --verify,       -V      verify hash contained in detached file against -i
+        --verify,       -V      vrfy hash contained in detached file against -i
         --persona,      -P      your persona hex id as used for signing
         --import,       -I      import new persona from --in
         --list,         -l      list all personas
@@ -71,14 +71,19 @@ Usage: opmsg    [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
         --short                 short view of hex ids
         --long                  long view of hex ids
         --split                 split view of hex ids
-        --newp,         -N      create new persona (should add --name)
-        --link                  link (your) --persona as default src to this target id
-        --newdhp                create new DHparams for a given -P (rarely needed)
+        --newp,         -N      create new RSA persona (should add --name)
+        --newecp                create new EC persona (should add --name)
+        --link                  link (your) --persona as default src to this
+                                target id
+        --newdhp                create new DHparams for persona (rarely needed)
         --calgo,        -C      use this algo for encryption
         --phash,        -p      use this hash algo for hashing personas
         --in,           -i      input file (stdin)
         --out,          -o      output file (stdout)
         --name,         -n      use this name for newly created personas
+        --burn                  (!dangerous!) burn private (EC)DH key after
+                                decryption to achieve 'full' PFS
+
 
 ```
 
@@ -89,9 +94,9 @@ Personas
 --------
 
 The key concept of _opmsg_ is the use of personas. Personas are
-an identity with a RSA key bound to it. Communication happens between
+an identity with either an EC or RSA key bound to it. Communication happens between
 two personas (which could be the same) which are uniquely identified
-by the hashsum of their RSA keys:
+by the hashsum of their EC/RSA keys:
 
 ```
 $ opmsg --newp --name stealth
@@ -143,7 +148,7 @@ _Side-note: If you want to stay anonymous, do not send selfies
 with your persona id and dont use communication paths that can
 be mapped to you._
 
-By default `sha256` is used to hash the RSA keyblob but you may also specify `ripemd160`
+By default `sha256` is used to hash the pubkey blob but you may also specify `ripemd160`
 or `sha512`. Whichever you choose, its important that your peer knows
 about it during import, because you will be referenced with this hex hash value
 in future.
@@ -157,13 +162,22 @@ sense.
 
 _opmsg_ encourages users for easy persona creation and throwaway.
 The directory structure below `~/.opmsg` is easy and straight
-forward. It just maps the hex ids of the personas and DH keys
+forward. It just maps the hex ids of the personas and (EC)DH keys
 to directories and can in fact be edited by hand.
 
-Creation of personas might take some time. Not just an RSA key
-is generated - which is not very time consuming - but also DH
+Creation of RSA personas might take some time. Not just an RSA key
+is generated in that case - which is not very time consuming - but also DH
 parameters (2048bit by default) that are used to implement PFS
 in later messenging (see later chapter).
+
+In order to speed up persona generation and to encourage use- and throwaway
+and per-project personas, EC support was added to _opmsg_ as of `version=1.5`.
+Instead of `--newp` you would just use `--newecp` and everything else is the
+same. `opmsg` will pick the right crypto transparently to you. No need to add
+any further switches for encryption or alike. EC personas use the brainpool curves
+(RFC 5639). The NIST curve `secp521r1` may also be used as a fallback if your
+libcrypto is outdated, but its recommended to use the brainpool curves which
+dont keep any secrets about how their group parameters were selected.
 
 **Note:** *opmsg*s printing versions earlier than `opmsg: version=1.2` have had a weakness
 that left the personas RSA's (public) **e** value integrity-unprotected during `--import`.
@@ -222,20 +236,24 @@ Keys
 Now for the coolest feature of _opmsg_: Perfect Forward Secrecy (PFS).
 
 Without any need to re-code your mail clients or add bloat to the
-SMTP protocol, _opmsg_ supports PFS by means of DH Kex out of the box.
+SMTP protocol, _opmsg_ supports PFS by means of (EC)DH Kex out of the box.
 
-That is, as op-messages are _always_ signed by its source persona,
+For RSA personas, DH Kex is used. For EC personas ECDH Kex is used to derive
+the secret, hence the term (EC)DH.
+
+As op-messages are _always_ signed by its source persona,
 whenever you send an opmsg to some other persona, a couple of
-DH keys are generated and attached to the message. The remote
+(EC)DH keys are generated and attached to the message. The remote
 _opmsg_ will verify its integrity (as it has this persona imported)
 and add it to this persona's keystore. So whenever this remote peer
-sends you a mail next time, it can choose one of the DH keys it has
-got beforehand. If your peer runs out of DH keys, _opmsg_ falls
-back to RSA encryption. The peer deletes used DH pubkeys to not
+sends you a mail next time, it can choose one of the (EC)DH keys it has
+got beforehand. If your peer runs out of (EC)DH keys, _opmsg_ falls
+back to native RSA or EC encryption, depending of the type of persona.
+The peer deletes used (EC)DH pubkeys to not
 use them twice and the local peer marks used keys with a
 `used` file within the apropriate key-directory. Once again,
 `sha256` is used by default to index and to (worldwide) uniquely
-identify DH keys.
+identify (EC)DH keys.
 
 **Attention:** If you keep encrypted op-messages in your mailbox,
 do not throw away this persona. You wont be able to decrypt these mails
@@ -251,7 +269,7 @@ about to protect your messages in transit, not on disk.
 
 As of `version=1.3` there is a `--burn` option that nukes used DH
 keys from storage. Be aware: you can only decrypt the message once.
-Once the message is successfully decrypted, the DH key that was used
+Once the message is successfully decrypted, the (EC)DH key that was used
 is overwritten and deleted from storage.
 
 
