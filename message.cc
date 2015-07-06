@@ -257,7 +257,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		size_t len = 0;
 		if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
 			return build_error("encrypt::EVP_PKEY_derive: ", -1);
-		if (len > 0x100000)
+		if (len > max_sane_string)
 			return build_error("encrypt: Insane large derived keylen.", -1);
 		secret.reset(new (nothrow) unsigned char[len]);
 		if (!secret.get() || EVP_PKEY_derive(ctx2.get(), secret.get(), &len) != 1)
@@ -302,6 +302,9 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 		b64_encode(reinterpret_cast<char *>(outbuf.get()), outlen, b64pubkey);
 	}
+
+	if (slen < 16)
+		return build_error("encrypt: Huh? Generated secret len of insufficient entropy size.", -1);
 
 	while (b64pubkey.size() > 0) {
 		outmsg += b64pubkey.substr(0, lwidth);
@@ -500,8 +503,9 @@ int message::decrypt(string &raw)
 		return build_error("decrypt::EVP_DigestVerifyUpdate:", -1);
 	string sig = "";
 	b64_decode(b64sig, sig);
+	errno = 0;	// Dont consider errno on wrong message signature error message
 	if (EVP_DigestVerifyFinal(&md_ctx, (unsigned char *)(sig.c_str()), sig.size()) != 1)
-		return build_error("decrypt::EVP_DigestVerifyFinal: Message verification FAILED:", -1);
+		return build_error("decrypt::EVP_DigestVerifyFinal: Message verification FAILED.", -1);
 
 	EVP_MD_CTX_cleanup(&md_ctx);
 	evp = nullptr;
@@ -663,7 +667,7 @@ int message::decrypt(string &raw)
 		size_t len = 0;
 		if (EVP_PKEY_derive(ctx.get(), nullptr, &len) != 1)
 			return build_error("decrypt::EVP_PKEY_derive: ", -1);
-		if (len > 0x100000)
+		if (len > max_sane_string)
 			return build_error("decrypt: Insane large derived keylen.", -1);
 		secret.reset(new (nothrow) unsigned char[len]);
 		if (!secret.get() || EVP_PKEY_derive(ctx.get(), secret.get(), &len) != 1)
@@ -731,8 +735,6 @@ int message::decrypt(string &raw)
 	raw = plaintext;
 	plaintext.clear();
 
-	if (has_dh_key && used_keys)
-		dst_persona->used_key(kex_id_hex, 1);
 	return 0;
 }
 

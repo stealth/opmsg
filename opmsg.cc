@@ -55,6 +55,7 @@ enum {
 	LINK			= 4,
 	BURN			= 5,
 	NEWECP			= 6,
+	FREEHUGS		= 7,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -68,21 +69,22 @@ enum {
 	CMODE_PGPLIST		= 0x10000,
 	CMODE_LINK		= 0x20000,
 	CMODE_NEWECP		= 0x40000,
+	CMODE_FREEHUGS		= 0x80000
 };
 
 
-const string banner = "\nopmsg: version=1.3 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 
 void usage(const char *p)
 {
 	cerr<<banner;
 
-	cout<<"\nUsage: "<<p<<"\t[--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
-	    <<"\t\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
-	    <<"\t\t[--short] [--long] [--split] [--newp] [--newdhp] [--calgo name]"<<endl
-	    <<"\t\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
-	    <<"\t\t[--link target id] [--burn]"<<endl<<endl
+	cout<<"\nUsage: opmsg [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
+	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
+	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
+	    <<"\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
+	    <<"\t[--link target id] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--rsa,\t\t-R\tRSA override (dont use existing DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
@@ -96,7 +98,8 @@ void usage(const char *p)
 	    <<"\t--short\t\t\tshort view of hex ids"<<endl
 	    <<"\t--long\t\t\tlong view of hex ids"<<endl
 	    <<"\t--split\t\t\tsplit view of hex ids"<<endl
-	    <<"\t--newp,\t\t-N\tcreate new persona (should add --name)"<<endl
+	    <<"\t--newp,\t\t-N\tcreate new RSA persona (should add --name)"<<endl
+	    <<"\t--newecp\t\tcreate new EC persona (should add --name)"<<endl
 	    <<"\t--link\t\t\tlink (your) --persona as default src to this"<<endl
 	    <<"\t\t\t\ttarget id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
@@ -105,7 +108,7 @@ void usage(const char *p)
 	    <<"\t--in,\t\t-i\tinput file (stdin)"<<endl
 	    <<"\t--out,\t\t-o\toutput file (stdout)"<<endl
 	    <<"\t--name,\t\t-n\tuse this name for newly created personas"<<endl
-	    <<"\t--burn\t\t\t(!dangerous!) burn private DH key after"<<endl
+	    <<"\t--burn\t\t\t(!dangerous!) burn private (EC)DH key after"<<endl
 	    <<"\t\t\t\tdecryption to achieve 'full' PFS"<<endl<<endl;
 
 	exit(-1);
@@ -418,7 +421,6 @@ int do_decrypt()
 	ctext.erase(pos + marker::opmsg_end.size());
 
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
-	msg.mark_used_keys(1);
 
 	if (msg.decrypt(ctext) < 0) {
 		cerr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
@@ -440,11 +442,13 @@ int do_decrypt()
 
 	// only burn keys after everything else was a success, including
 	// writing of plaintext message
+	persona p(config::cfgbase, msg.dst_id());
 	if (config::burn) {
-		persona p(config::cfgbase, msg.dst_id());
 		p.del_dh_priv(msg.kex_id());
 		p.del_dh_pub(msg.kex_id());
 		p.del_dh_id(msg.kex_id());
+	} else {
+		p.used_key(msg.kex_id(), 1);
 	}
 	return 0;
 }
@@ -584,11 +588,11 @@ int do_list(const string &name)
 		return -1;
 	}
 	cerr<<prefix<<"Successfully loaded "<<ks.size()<<" personas.\n";
-	cerr<<prefix<<"(id)\t(name)\t(has privkey)\t(#DHkeys)\t(type)\n";
+	cerr<<prefix<<"id | type | has privkey | #(EC)DHkeys | name\n";
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (name.size() == 0 || i->second->get_name().find(name) != string::npos) {
-			cout<<prefix<<idformat(i->second->get_id())<<"\t"<<i->second->get_name()<< "\t";
-			cout<<i->second->can_sign()<<"\t"<<i->second->size()<<"\t"<<i->second->get_type()<<endl;
+			cout<<prefix<<idformat(i->second->get_id())<<" "<<i->second->get_type()<<"\t";
+			cout<<i->second->can_sign()<<" "<<i->second->size()<<"\t"<<i->second->get_name()<<endl;
 		}
 	}
 	return 0;
@@ -736,6 +740,7 @@ int main(int argc, char **argv)
 	        {"burn", no_argument, nullptr, BURN},
 	        {"in", required_argument, nullptr, 'i'},
 	        {"out", required_argument, nullptr, 'o'},
+	        {"freehugs", no_argument, nullptr, FREEHUGS},
 	        {nullptr, 0, nullptr, 0}};
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
@@ -840,6 +845,9 @@ int main(int argc, char **argv)
 		case BURN:
 			config::burn = 1;
 			break;
+		case FREEHUGS:
+			cmode = CMODE_FREEHUGS;
+			break;
 		}
 	}
 
@@ -848,6 +856,9 @@ int main(int argc, char **argv)
 
 	if (cmode != CMODE_PGPLIST)
 		cerr<<banner;
+
+	if (cmode == CMODE_FREEHUGS)
+		cout<<prefix<<"HUG, HUG - sell a bug.\n";
 
 	if (!is_valid_halgo(config::phash)) {
 		cerr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";

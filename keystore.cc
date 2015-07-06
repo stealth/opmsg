@@ -202,6 +202,8 @@ int keystore::load()
 		personas[hex] = p;
 	}
 	closedir(d);
+
+	errno = 0;
 	return 0;
 }
 
@@ -601,6 +603,7 @@ int persona::load_dh(const string &hex)
 		keys.erase(hex);
 	}
 
+	errno = 0;
 	return 0;
 }
 
@@ -623,6 +626,8 @@ int persona::check_type()
 		else
 			return build_error("check_type: Neither RSA nor EC keys found for persona.", -1);
 	}
+
+	errno = 0;
 	return 0;
 }
 
@@ -748,6 +753,7 @@ int persona::load(const std::string &dh_hex)
 	}
 	closedir(d);
 
+	errno = 0;
 	return 0;
 }
 
@@ -907,6 +913,7 @@ PKEYbox *persona::gen_ecdh_key(const EVP_MD *md)
 		return build_error("gen_ecdh_key::fdopen:", nullptr);
 	if (fwrite(priv_pem.c_str(), priv_pem.size(), 1, f.get()) != 1)
 		return build_error("gen_ecdh_key::fwrite:", nullptr);
+	f.reset();
 
 	string hexdir = cfgbase + "/" + id + "/" + hex;
 
@@ -1148,6 +1155,8 @@ int persona::del_dh_priv(const string &hex)
 		i->second->priv_pem = "";
 		EVP_PKEY_free(i->second->priv); i->second->priv = nullptr;
 	}
+
+	errno = 0;
 	return 0;
 }
 
