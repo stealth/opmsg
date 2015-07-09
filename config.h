@@ -27,7 +27,7 @@ namespace opmsg {
 
 namespace config {
 
-extern int dh_plen, rsa_len, new_dh_keys, rsa_override, curve_nid;
+extern int dh_plen, rsa_len, new_dh_keys, native_crypt, curve_nid;
 extern std::string rsa_e;
 
 extern std::string infile, outfile, calgo, idformat, my_id;

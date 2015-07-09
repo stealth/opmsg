@@ -40,7 +40,7 @@ int rsa_len = 4096;
 
 int new_dh_keys = 3;
 
-int rsa_override = 0;
+int native_crypt = 0;
 
 std::string rsa_e = "65537";
 
@@ -129,7 +129,9 @@ int parse_config(const string &cfgbase)
 			if (config::new_dh_keys < 0 || config::new_dh_keys > 100)
 				config::new_dh_keys = 3;
 		} else if (sline == "rsa_override")
-			config::rsa_override = 1;
+			config::native_crypt = 1;
+		else if (sline == "native_crypt")
+			config::native_crypt = 1;
 		else if (sline == "burn")
 			config::burn = 1;
 		else if (sline == "curve=secp521r1") {

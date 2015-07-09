@@ -1031,6 +1031,8 @@ void persona::used_key(const string &hexid, bool u)
 {
 	if (!is_hex_hash(hexid))
 		return;
+	if (hexid == marker::rsa_kex_id || hexid == marker::ec_kex_id)
+		return;
 
 	string file = cfgbase + "/" + id + "/" + hexid + "/used";
 	if (!u)
@@ -1113,6 +1115,8 @@ int persona::del_dh_id(const string &hex)
 {
 	if (!is_hex_hash(hex))
 		return build_error("del_dh_id: Invalid key id.", -1);
+	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
+		return 0;
 
 	string dir = cfgbase + "/" + id + "/" + hex;
 	if (keys.count(hex) > 0) {
@@ -1127,6 +1131,9 @@ int persona::del_dh_priv(const string &hex)
 {
 	if (!is_hex_hash(hex))
 		return build_error("del_dh_priv: Invalid key id.", -1);
+
+	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
+		return 0;
 
 	string file = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
 	string used = cfgbase + "/" + id + "/" + hex + "/used";
@@ -1166,6 +1173,8 @@ int persona::del_dh_pub(const string &hex)
 {
 	if (!is_hex_hash(hex))
 		return build_error("del_dh_pub: Invalid key id.", -1);
+	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
+		return 0;
 
 	string file = cfgbase + "/" + id + "/" + hex + "/dh.pub.pem";
 	unlink(file.c_str());

@@ -52,14 +52,14 @@ $ opmsg
 opmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 
-Usage: opmsg [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]
+Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         [--verify file] <--persona ID> [--import] [--list] [--listpgp]
         [--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]
         [--phash name [--name name] [--in infile] [--out outfile]
         [--link target id] [--burn]
 
         --confdir,      -c      (must come first) defaults to ~/.opmsg
-        --rsa,          -R      RSA override (dont use existing DH keys)
+        --native,       -R      EC/RSA override (dont use existing (EC)DH keys)
         --encrypt,      -E      recipients persona hex id (-i to -o, needs -P)
         --decrypt,      -D      decrypt --in to --out
         --sign,         -S      create detached signature file from -i via -P

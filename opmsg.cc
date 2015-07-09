@@ -80,13 +80,13 @@ void usage(const char *p)
 {
 	cerr<<banner;
 
-	cout<<"\nUsage: opmsg [--confdir dir] [--rsa] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
+	cout<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
 	    <<"\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
 	    <<"\t[--link target id] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
-	    <<"\t--rsa,\t\t-R\tRSA override (dont use existing DH keys)"<<endl
+	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
 	    <<"\t--decrypt,\t-D\tdecrypt --in to --out"<<endl
 	    <<"\t--sign,\t\t-S\tcreate detached signature file from -i via -P"<<endl
@@ -245,7 +245,11 @@ int do_sign()
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, "null");
 	msg.src_id(my_p->get_id());
 	msg.dst_id(my_p->get_id());
-	msg.kex_id(marker::rsa_kex_id);
+
+	if (my_p->get_type() == marker::rsa)
+		msg.kex_id(marker::rsa_kex_id);
+	else
+		msg.kex_id(marker::ec_kex_id);
 
 	if (msg.encrypt(hexhash, my_p, my_p) < 0) {
 		cerr<<prefix<<"ERROR: Signing file: "<<msg.why()<<endl;
@@ -334,18 +338,19 @@ int do_encrypt(const string &dst_id)
 	msg.src_id(src_p->get_id());
 	msg.dst_id(dst_p->get_id());
 
-	if (!config::rsa_override || dst_p->get_type() == marker::ec) {
-		if (dst_p->get_type() == marker::ec)
-			kex_id = marker::ec_kex_id;
+	if (dst_p->get_type() == marker::ec)
+		kex_id = marker::ec_kex_id;
 
+	if (!config::native_crypt) {
 		for (auto i = dst_p->first_key(); i != dst_p->end_key(); i = dst_p->next_key(i)) {
 			if (i->second->can_encrypt()) {
 				kex_id = i->first;
 				break;
 			}
 		}
-		if (kex_id == marker::rsa_kex_id)
-			cerr<<prefix<<"warn: Out of DH keys for target persona. Using RSA fallback.\n";
+		if (kex_id == marker::rsa_kex_id ||
+		    kex_id == marker::ec_kex_id)
+			cerr<<prefix<<"warn: Out of (EC)DH keys for target persona. Using EC/RSA fallback.\n";
 	}
 
 	// rsa/ec marker in case no ephemeral (EC)DH key was found
@@ -383,7 +388,7 @@ int do_encrypt(const string &dst_id)
 
 	// everything went fine, so erase used pub DH key from
 	// peer personas store to avoid using them twice
-	if (kex_id != marker::rsa_kex_id) {
+	if (kex_id != marker::rsa_kex_id && kex_id != marker::ec_kex_id) {
 		dst_p->del_dh_pub(kex_id);
 
 		// dont delete the id itself, it would erase underlying
@@ -427,8 +432,9 @@ int do_decrypt()
 		return -1;
 	}
 
-	if (msg.kex_id() == marker::rsa_kex_id)
-		cerr<<prefix<<"warn: Your peer is out of DH keys and uses RSA fallback mode.\n";
+	if (msg.kex_id() == marker::rsa_kex_id ||
+	    msg.kex_id() == marker::ec_kex_id)
+		cerr<<prefix<<"warn: Your peer is out of (EC)DH keys and uses EC/RSA fallback mode.\n";
 
 	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 	if (msg.get_srcname().size() > 0)
@@ -718,7 +724,7 @@ int main(int argc, char **argv)
 
 	struct option lopts[] = {
 	        {"confdir", required_argument, nullptr, 'c'},
-	        {"rsa", no_argument, nullptr, 'R'},
+	        {"native", no_argument, nullptr, 'R'},
 	        {"encrypt", required_argument, nullptr, 'E'},
 	        {"decrypt", no_argument, nullptr, 'D'},
 	        {"sign", no_argument, nullptr, 'S'},
@@ -809,7 +815,7 @@ int main(int argc, char **argv)
 			cmode = CMODE_IMPORT;
 			break;
 		case 'R':
-			config::rsa_override = 1;
+			config::native_crypt = 1;
 			break;
 		case 'l':
 			cmode = CMODE_LIST;
