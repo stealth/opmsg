@@ -197,7 +197,7 @@ Persona linking - if required
 Although this step is not strictly necessary, it is recommended. As personas are easily
 created, you can (should) create a dedicated persona for each of your "projects" or
 contacts. That is, if you have 7350 communication partners/peers, you should have
-created 7350 personas; one RSA key for each of them. To handle that easily with your
+created 7350 personas; one EC/RSA key for each of them. To handle that easily with your
 mailer (see later for mutt integration), you should add a proper `--name`, describing your
 id. Additionally, you should `--link` your source persona (each of the 7350 you created)
 to the particular destination persona that you wish to communicate with using this source id:
@@ -327,8 +327,13 @@ calgo = aes128ctr
 # split (default), long, short
 idformat = short
 
-# number of new DH keys attached to msg, default is 3
+# number of new (EC)DH keys attached to msg, default is 3
 new_dh_keys = 3
+
+# EC curve to be used for EC personas.
+# Default. Other choices: secp521r1 (be aware: NIST curve!), brainpoolP320t1, brainpoolP384r1,
+# brainpoolP384t1, brainpoolP512r1, brainpoolP512t1
+curve = brainpoolP320r
 ```
 
 However, any option could also be passed as a commandline argument to

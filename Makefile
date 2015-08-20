@@ -25,7 +25,7 @@ LIBS+=-lcrypto
 all: opmsg
 
 opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o
-	$(LD) $(LDFLAGS) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o $(LIBS) -o $@
+	$(LD) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o $(LDFLAGS) $(LIBS) -o $@
 
 opmsg.o: opmsg.cc
 	$(CXX) $(CXXFLAGS) -c $<

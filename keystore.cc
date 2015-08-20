@@ -219,21 +219,12 @@ int gen_ec(string &pub, string &priv, string &err)
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-	unique_ptr<EC_GROUP, EC_GROUP_del> ecgrp(EC_GROUP_new_by_curve_name(config::curve_nid), EC_GROUP_free);
-	if (!ecgrp.get()) {
-		err += build_error("gen_ec::EC_GROUP_new_by_curve_name:");
-		return -1;
-	}
 	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(config::curve_nid), EC_KEY_free);
 	if (!eckey.get()) {
 		err += build_error("gen_ec::EC_KEY_new_by_curve_name:");
 		return -1;
 	}
 
-	if (EC_KEY_set_group(eckey.get(), ecgrp.get()) != 1) {
-		err += build_error("gen_ec::EC_KEY_set_group:");
-		return -1;
-	}
 	if (EC_KEY_generate_key(eckey.get()) != 1) {
 		err += build_error("gen_ec::EC_KEY_generate_key:");
 		return -1;
