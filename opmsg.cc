@@ -935,7 +935,7 @@ int main(int argc, char **argv)
 	}
 
 	if (cmode == CMODE_FREEHUGS) {
-		ostr<<"HUG, HUG - sell a bug.\n"; eflush();
+		ostr<<"HUG, HUG - sell a bug.\n"; oflush();
 	}
 
 	if (!is_valid_halgo(config::phash)) {
