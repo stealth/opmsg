@@ -22,6 +22,7 @@
 #define __misc_h__
 
 #include <string>
+#include <sstream>
 
 extern "C" {
 #include <openssl/evp.h>
@@ -37,9 +38,9 @@ bool is_valid_halgo(const std::string &);
 
 bool is_valid_calgo(const std::string &);
 
-void print_calgos();
+void print_calgos(std::ostringstream &);
 
-void print_halgos();
+void print_halgos(std::ostringstream &);
 
 const EVP_CIPHER *algo2cipher(const std::string &);
 

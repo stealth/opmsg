@@ -19,6 +19,7 @@
  */
 
 #include <iostream>
+#include <sstream>
 #include <memory>
 #include <string>
 #include <cstdio>
@@ -75,12 +76,34 @@ enum {
 
 const string banner = "\nopmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
+/* The iostream lib works not very well wrt customized buffering and flushing
+ * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
+ * otherwise cerr<< may break up messages in too many useless chunks, fucking up the order
+ * when called remotely without pty (ropmsg case)
+ */
+ostringstream ostr, estr;
+
+void eflush()
+{
+	cerr<<estr.str();
+	estr.str("");
+}
+
+
+void oflush()
+{
+	cout<<ostr.str();
+	ostr.str("");
+}
+
+
 
 void usage(const char *p)
 {
-	cerr<<banner;
+	estr<<banner;
+	eflush();
 
-	cout<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
+	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
 	    <<"\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
@@ -111,6 +134,7 @@ void usage(const char *p)
 	    <<"\t--burn\t\t\t(!dangerous!) burn private (EC)DH key after"<<endl
 	    <<"\t\t\t\tdecryption to achieve 'full' PFS"<<endl<<endl;
 
+	oflush();
 	exit(-1);
 }
 
@@ -119,38 +143,65 @@ void usage(const char *p)
 int read_msg(const string &path, string &msg)
 {
 	msg = "";
-	int fd = open(path.c_str(), O_RDONLY);
-	if (fd < 0)
-		return -1;
+	int fd = 0;
+	bool was_opened = 0;
+
+	if (path != "/dev/stdin") {
+		if ((fd = open(path.c_str(), O_RDONLY)) < 0)
+			return -1;
+		was_opened = 1;
+	}
 
 	const size_t blen = 0x10000;
 	char *buf = new char[blen];
 	ssize_t r = 0;
 	do {
 		r = read(fd, buf, blen);
+
+		// check for EOT (Ctrl-C). In case stdin is a pipe (ropmsg called),
+		// we wont receive Ctrl-C triggered SIGINT
+		if (r == 1 && fd == 0 && buf[0] == 0x3)
+			break;
 		if (r > 0)
 			msg += string(buf, r);
 	} while (r > 0);
 
 	delete [] buf;
-	close(fd);
+
+	if (was_opened)
+		close(fd);
 	return 0;
 }
 
 
 int write_msg(const string &path, const string &msg)
 {
-	int flags = O_WRONLY;
-	if (path != "/dev/stdout")
-		flags |= O_CREAT|O_EXCL;
-	int fd = open(path.c_str(), flags, 0600);
-	if (fd < 0)
-		return -1;
-	if ((string::size_type)write(fd, msg.c_str(), msg.size()) != msg.size()) {
-		close(fd);
-		return -1;
+	int fd = 1;
+	bool was_opened = 0;
+
+	if (path != "/dev/stdout") {
+		if ((fd = open(path.c_str(), O_WRONLY|O_CREAT|O_EXCL, 0600)) < 0)
+			return -1;
+		was_opened = 1;
 	}
-	close(fd);
+
+	string::size_type idx = 0;
+	size_t n = 0, chunk_size= 0x1000;
+	do {
+		if (msg.size() - idx < chunk_size)
+			n = msg.size() - idx;
+		else
+			n = chunk_size;
+		if ((string::size_type)write(fd, msg.c_str() + idx, n) != n) {
+			if (was_opened)
+				close(fd);
+			return -1;
+		}
+		idx += n;
+	} while (idx < msg.size());
+
+	if (was_opened)
+		close(fd);
 	return 0;
 }
 
@@ -208,37 +259,37 @@ int do_sign()
 	persona *my_p = nullptr;
 
 	if (!ks.get()) {
-		cerr<<prefix<<"ERROR: OOM\n";
+		estr<<prefix<<"ERROR: OOM\n"; eflush();
 		return -1;
 	}
 
 	if (config::my_id.size() == 16) {
 		if (ks->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		if (!(my_p = ks->find_persona(config::my_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 	} else {
 		my_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(my_p = my_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (my_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<my_p->why()<<endl;
+			estr<<prefix<<"ERROR: "<<my_p->why()<<endl; eflush();
 			return -1;
 		}
 		if (!my_p->can_sign()) {
-			cerr<<prefix<<"ERROR: Missing keys for signing!\n";
+			estr<<prefix<<"ERROR: Missing keys for signing!\n"; eflush();
 			return -1;
 		}
 	}
 
 	if (file2hexhash(config::infile, hexhash) < 0) {
-		cerr<<prefix<<"ERROR: generating "<<config::shash<<" for file.\n";
+		estr<<prefix<<"ERROR: generating "<<config::shash<<" for file.\n"; eflush();
 		return -1;
 	}
 
@@ -252,11 +303,11 @@ int do_sign()
 		msg.kex_id(marker::ec_kex_id);
 
 	if (msg.encrypt(hexhash, my_p, my_p) < 0) {
-		cerr<<prefix<<"ERROR: Signing file: "<<msg.why()<<endl;
+		estr<<prefix<<"ERROR: Signing file: "<<msg.why()<<endl; eflush();
 		return -1;
 	}
 	if (write_msg(config::outfile, hexhash) < 0) {
-		cerr<<prefix<<"ERROR: Writing outfile: "<<strerror(errno)<<endl;
+		estr<<prefix<<"ERROR: Writing outfile: "<<strerror(errno)<<endl; eflush();
 		return -1;
 	}
 	return 0;
@@ -273,18 +324,18 @@ int do_encrypt(const string &dst_id)
 	string text = "", kex_id = marker::rsa_kex_id;
 
 	if (!ks.get()) {
-		cerr<<prefix<<"ERROR: OOM\n";
+		estr<<prefix<<"ERROR: OOM\n"; eflush();
 		return -1;
 	}
 
 	if (dst_id.size() == 16 || config::my_id.size() == 16) {
 		if (ks->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		// do not use unique_ptr here, we dont have ownership
 		if (!(dst_p = ks->find_persona(dst_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		// any default src linked to this target? override!
@@ -292,17 +343,17 @@ int do_encrypt(const string &dst_id)
 			config::my_id = dst_p->linked_src();
 
 		if (!(src_p = ks->find_persona(config::my_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 	} else {
 		dst_persona.reset(new (nothrow) persona(config::cfgbase, dst_id));
 		if (!(dst_p = dst_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (dst_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<dst_persona->why()<<endl;
+			estr<<prefix<<"ERROR: "<<dst_persona->why()<<endl; eflush();
 			return -1;
 		}
 		// any default src linked to this target? override!
@@ -311,26 +362,26 @@ int do_encrypt(const string &dst_id)
 
 		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(src_p = src_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (src_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<src_persona->why()<<endl;
+			estr<<prefix<<"ERROR: "<<src_persona->why()<<endl; eflush();
 			return -1;
 		}
 	}
 
 	if (!dst_p->can_encrypt()) {
-		cerr<<prefix<<"ERROR: Missing keys for encryption.\n";
+		estr<<prefix<<"ERROR: Missing keys for encryption.\n"; eflush();
 		return -1;
 	}
 	if (!src_p->can_sign()) {
-		cerr<<prefix<<"ERROR: Missing signing key for ourselfs.\n";
+		estr<<prefix<<"ERROR: Missing signing key for ourselfs.\n"; eflush();
 		return -1;
 	}
 
 	if (read_msg(config::infile, text) < 0) {
-		cerr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n";
+		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
 	}
 
@@ -349,8 +400,10 @@ int do_encrypt(const string &dst_id)
 			}
 		}
 		if (kex_id == marker::rsa_kex_id ||
-		    kex_id == marker::ec_kex_id)
-			cerr<<prefix<<"warn: Out of (EC)DH keys for target persona. Using EC/RSA fallback.\n";
+		    kex_id == marker::ec_kex_id) {
+			estr<<prefix<<"warn: Out of (EC)DH keys for target persona. Using EC/RSA fallback.\n";
+			eflush();
+		}
 	}
 
 	// rsa/ec marker in case no ephemeral (EC)DH key was found
@@ -379,10 +432,13 @@ int do_encrypt(const string &dst_id)
 			src_p->del_dh_id((*i)->hex);
 		}
 
-		if (r1 < 0)
-			cerr<<prefix<<"ERROR: "<<msg.why()<<endl;
-		else
-			cerr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";
+		if (r1 < 0) {
+			estr<<prefix<<"ERROR: "<<msg.why()<<endl;
+			eflush();
+		} else {
+			estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";
+			eflush();
+		}
 		return -1;
 	}
 
@@ -407,19 +463,19 @@ int do_decrypt()
 	string ctext = "";
 
 	if (read_msg(config::infile, ctext) < 0) {
-		cerr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n";
+		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
 	}
 
 	string::size_type pos = 0;
 	if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
-		cerr<<prefix<<"ERROR: Infile not in OPMSG format.\n";
+		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
 		return -1;
 	}
 	if (pos > 0)
 		ctext.erase(0, pos);
 	if ((pos = ctext.find(marker::opmsg_end)) == string::npos) {
-		cerr<<prefix<<"ERROR: Infile not in OPMSG format.\n";
+		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
 		return -1;
 	}
 	// cut off anything at the end
@@ -428,21 +484,21 @@ int do_decrypt()
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 
 	if (msg.decrypt(ctext) < 0) {
-		cerr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
+		estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl; eflush();
 		return -1;
 	}
 
 	if (msg.kex_id() == marker::rsa_kex_id ||
 	    msg.kex_id() == marker::ec_kex_id)
-		cerr<<prefix<<"warn: Your peer is out of (EC)DH keys and uses EC/RSA fallback mode.\n";
+		estr<<prefix<<"warn: Your peer is out of (EC)DH keys and uses EC/RSA fallback mode.\n";
 
-	cerr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
+	estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 	if (msg.get_srcname().size() > 0)
-		cerr<<" ("<<msg.get_srcname()<<")";
-	cerr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n";
+		estr<<" ("<<msg.get_srcname()<<")";
+	estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n"; eflush();
 
 	if (write_msg(config::outfile, ctext) < 0) {
-		cerr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";
+		estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
 	}
 
@@ -465,26 +521,26 @@ int do_verify(const string &verify_file)
 	string ctext = "", hexhash = "";
 
 	if (read_msg(config::infile, ctext) < 0) {
-		cerr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n";
+		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
 	}
 
 	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 
 	if (msg.decrypt(ctext) < 0) {
-		cerr<<prefix<<"ERROR: verifying message: "<<msg.why()<<endl;
+		estr<<prefix<<"ERROR: verifying message: "<<msg.why()<<endl; eflush();
 		return -1;
 	}
 
 	if (file2hexhash(verify_file, hexhash) < 0) {
-		cerr<<prefix<<"ERROR: generating hash for file.\n";
+		estr<<prefix<<"ERROR: generating hash for file.\n"; eflush();
 		return -1;
 	}
 	if (ctext == hexhash) {
-		cerr<<prefix<<"GOOD signature and hash via persona "<<idformat(msg.src_id())<<"\n";
+		estr<<prefix<<"GOOD signature and hash via persona "<<idformat(msg.src_id())<<"\n"; eflush();
 		return 0;
 	} else {
-		cerr<<prefix<<"BAD "<<msg.get_shash()<<" of input file for persona "<<idformat(msg.src_id())<<"\n";
+		estr<<prefix<<"BAD "<<msg.get_shash()<<" of input file for persona "<<idformat(msg.src_id())<<"\n"; eflush();
 	}
 	return -1;
 }
@@ -498,12 +554,12 @@ int do_newpersona(const string &name, const string &type)
 
 	if (type == marker::rsa) {
 		if (ks.gen_rsa(pub, priv) < 0) {
-			cerr<<prefix<<"ERROR: generating new RSA keys: "<<ks.why()<<endl;
+			estr<<prefix<<"ERROR: generating new RSA keys: "<<ks.why()<<endl; eflush();
 			return -1;
 		}
 	} else {
 		if (ks.gen_ec(pub, priv) < 0) {
-			cerr<<prefix<<"ERROR: generating new EC keys: "<<ks.why()<<endl;
+			estr<<prefix<<"ERROR: generating new EC keys: "<<ks.why()<<endl; eflush();
 			return -1;
 		}
 	}
@@ -511,19 +567,22 @@ int do_newpersona(const string &name, const string &type)
 	// "new" means, generate new DHparams in case of RSA
 	persona *p = nullptr;
 	if (!(p = ks.add_persona(name, pub, priv, "new"))) {
-		cerr<<prefix<<"ERROR: Adding new persona to keystore: "<<ks.why()<<endl;
+		estr<<prefix<<"ERROR: Adding new persona to keystore: "<<ks.why()<<endl; eflush();
 		return -1;
 	}
-	cerr<<"\n\n"<<prefix<<"Successfully generated persona with id\n"<<prefix<<idformat(p->get_id())<<endl;
-	cerr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
-	cerr<<prefix<<"opmsg --import --phash "<<config::phash;
+	estr<<"\n\n"<<prefix<<"Successfully generated persona with id\n"<<prefix<<idformat(p->get_id())<<endl;
+	estr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
+	estr<<prefix<<"opmsg --import --phash "<<config::phash;
 	if (name.size() > 0)
-		cerr<<" --name "<<name;
-	cerr<<"\n\n";
-	cout<<pub<<endl;
-	cerr<<prefix<<"Check (by phone, otr, twitter, id-selfie etc.) that above id matches\n";
-	cerr<<prefix<<"the import message from your peer.\n";
-	cerr<<prefix<<"AFTER THAT, you can go ahead, safely exchanging op-messages.\n\n";
+		estr<<" --name "<<name;
+	estr<<"\n\n";
+	eflush();
+	ostr<<pub<<endl;
+	oflush();
+	estr<<prefix<<"Check (by phone, otr, twitter, id-selfie etc.) that above id matches\n";
+	estr<<prefix<<"the import message from your peer.\n";
+	estr<<prefix<<"AFTER THAT, you can go ahead, safely exchanging op-messages.\n\n";
+	eflush();
 	return 0;
 }
 
@@ -547,40 +606,40 @@ int do_newdhparams()
 	persona *my_p = nullptr;
 
 	if (!ks.get()) {
-		cerr<<prefix<<"ERROR: OOM\n";
+		estr<<prefix<<"ERROR: OOM\n"; eflush();
 		return -1;
 	}
 
 	if (config::my_id.size() == 16) {
 		if (ks->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		if (!(my_p = ks->find_persona(config::my_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 	} else {
 		my_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(my_p = my_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (my_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<my_p->why()<<endl;
+			estr<<prefix<<"ERROR: "<<my_p->why()<<endl; eflush();
 			return -1;
 		}
 		if (!my_p->can_sign()) {
-			cerr<<prefix<<"ERROR: Missing keys for signing.\n";
+			estr<<prefix<<"ERROR: Missing keys for signing.\n"; eflush();
 			return -1;
 		}
 	}
 
 	if (!my_p->new_dh_params()) {
-		cerr<<"\n\n"<<prefix<<"ERROR: Generating DHparams for "<<config::my_id<<"\n";
+		estr<<"\n\n"<<prefix<<"ERROR: Generating DHparams for "<<config::my_id<<"\n"; eflush();
 		return -1;
 	}
-	cerr<<"\n\n"<<prefix<<"Successfully generated new DHparams for "<<config::my_id<<"\n";
+	estr<<"\n\n"<<prefix<<"Successfully generated new DHparams for "<<config::my_id<<"\n"; eflush();
 
 	return 0;
 }
@@ -590,17 +649,19 @@ int do_list(const string &name)
 {
 	keystore ks(config::phash, config::cfgbase);
 	if (ks.load() < 0) {
-		cerr<<prefix<<"ERROR: Loading keystore.\n";
+		estr<<prefix<<"ERROR: Loading keystore.\n"; eflush();
 		return -1;
 	}
-	cerr<<prefix<<"Successfully loaded "<<ks.size()<<" personas.\n";
-	cerr<<prefix<<"id | type | has privkey | #(EC)DHkeys | name\n";
+	estr<<prefix<<"Successfully loaded "<<ks.size()<<" personas.\n";
+	estr<<prefix<<"id | type | has privkey | #(EC)DHkeys | name\n";
+	eflush();
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (name.size() == 0 || i->second->get_name().find(name) != string::npos) {
-			cout<<prefix<<idformat(i->second->get_id())<<" "<<i->second->get_type()<<"\t";
-			cout<<i->second->can_sign()<<" "<<i->second->size()<<"\t"<<i->second->get_name()<<endl;
+			ostr<<prefix<<idformat(i->second->get_id())<<" "<<i->second->get_type()<<"\t";
+			ostr<<i->second->can_sign()<<" "<<i->second->size()<<"\t"<<i->second->get_name()<<endl;
 		}
 	}
+	oflush();
 	return 0;
 }
 
@@ -613,8 +674,9 @@ int do_pgplist(const string &name)
 
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (name.size() == 0 || i->second->get_name().find(name) != string::npos)
-			cout<<"pub:u:1337:1:"<<idformat(i->second->get_id())<<":1::"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<"::eEsS\n";
+			ostr<<"pub:u:1337:1:"<<idformat(i->second->get_id())<<":1::"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<"::eEsS\n";
 	}
+	oflush();
 	return 0;
 }
 
@@ -622,11 +684,11 @@ int do_pgplist(const string &name)
 int do_import(const string &name)
 {
 	if (config::infile == "/dev/stdin")
-		cerr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
+		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
 
 	string pub = "";
 	if (read_msg(config::infile, pub) < 0) {
-		cerr<<prefix<<"ERROR: Importing persona: "<<strerror(errno)<<endl;
+		estr<<prefix<<"ERROR: Importing persona: "<<strerror(errno)<<endl; eflush();
 		return -1;
 	}
 
@@ -634,14 +696,15 @@ int do_import(const string &name)
 
 	persona *p = nullptr;
 	if (!(p = ks.add_persona(name, pub, "", ""))) {
-		cerr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl;
+		estr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl; eflush();
 		return -1;
 	}
-	cerr<<prefix<<"Successfully imported pesona with id "<<idformat(p->get_id())<<".\n";
-	cerr<<prefix<<"Check with your peer (phone, otr, twitter, selfie, ...) whether above id matches\n";
-	cerr<<prefix<<"with the id that your peer got printed when generating that persona.\n";
-	cerr<<prefix<<"If they do not match, you can delete this persona by removing the subdirectory\n";
-	cerr<<prefix<<"of obove id inside your ~/.opmsg directory.\n";
+	estr<<prefix<<"Successfully imported pesona with id "<<idformat(p->get_id())<<".\n";
+	estr<<prefix<<"Check with your peer (phone, otr, twitter, selfie, ...) whether above id matches\n";
+	estr<<prefix<<"with the id that your peer got printed when generating that persona.\n";
+	estr<<prefix<<"If they do not match, you can delete this persona by removing the subdirectory\n";
+	estr<<prefix<<"of obove id inside your ~/.opmsg directory.\n";
+	eflush();
 	return 0;
 }
 
@@ -653,7 +716,7 @@ int do_link(const string &dst_id)
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 
 	if (!ks.get()) {
-		cerr<<prefix<<"ERROR: OOM\n";
+		estr<<prefix<<"ERROR: OOM\n"; eflush();
 		return -1;
 	}
 
@@ -661,16 +724,16 @@ int do_link(const string &dst_id)
 
 	if (dst_id.size() == 16 || config::my_id.size() == 16) {
 		if (ks->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		// do not use unique_ptr here, we dont have ownership
 		if (!(dst_p = ks->find_persona(dst_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		if (!(src_p = ks->find_persona(config::my_id))) {
-			cerr<<prefix<<"ERROR: "<<ks->why()<<endl;
+			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
 		// take the long form
@@ -678,35 +741,35 @@ int do_link(const string &dst_id)
 	} else {
 		dst_persona.reset(new (nothrow) persona(config::cfgbase, dst_id));
 		if (!(dst_p = dst_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (dst_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<dst_persona->why()<<endl;
+			estr<<prefix<<"ERROR: "<<dst_persona->why()<<endl; eflush();
 			return -1;
 		}
 		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(src_p = src_persona.get())) {
-			cerr<<prefix<<"ERROR: OOM\n";
+			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
 		}
 		if (src_p->load() < 0) {
-			cerr<<prefix<<"ERROR: "<<src_persona->why()<<endl;
+			estr<<prefix<<"ERROR: "<<src_persona->why()<<endl; eflush();
 			return -1;
 		}
 	}
 
 	if (!src_p->can_sign()) {
-		cerr<<prefix<<"ERROR: "<<config::my_id<<" cannot be set as default-src because it lacks a private key.\n";
+		estr<<prefix<<"ERROR: "<<config::my_id<<" cannot be set as default-src because it lacks a private key.\n"; eflush();
 		return -1;
 	}
 	if (!dst_p->can_encrypt()) {
-		cerr<<prefix<<"ERROR: Invalid target persona "<<dst_id<<endl;
+		estr<<prefix<<"ERROR: Invalid target persona "<<dst_id<<endl; eflush();
 		return -1;
 	}
 
 	if (dst_p->link(link_id) < 0) {
-		cerr<<prefix<<"ERROR: "<<dst_p->why()<<endl;
+		estr<<prefix<<"ERROR: "<<dst_p->why()<<endl; eflush();
 		return -1;
 	}
 	return 0;
@@ -757,7 +820,11 @@ int main(int argc, char **argv)
 		config::cfgbase += "/.opmsg";
 	}
 
+	// no output buffering
 	setbuffer(stdout, nullptr, 0);
+	setbuffer(stderr, nullptr, 0);
+	cout.unsetf(ios::unitbuf);
+	cerr.unsetf(ios::unitbuf);
 
 	if (argc == 1)
 		usage(argv[0]);
@@ -776,6 +843,9 @@ int main(int argc, char **argv)
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_int;
 	sigaction(SIGINT, &sa, nullptr);
+	sa.sa_handler = SIG_IGN;
+	sigaction(SIGPIPE, &sa, nullptr);
+
 
 	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
 		switch (c) {
@@ -860,23 +930,27 @@ int main(int argc, char **argv)
 	if (cmode == CMODE_INVALID)
 		usage(argv[0]);
 
-	if (cmode != CMODE_PGPLIST)
-		cerr<<banner;
+	if (cmode != CMODE_PGPLIST) {
+		estr<<banner; eflush();
+	}
 
-	if (cmode == CMODE_FREEHUGS)
-		cout<<prefix<<"HUG, HUG - sell a bug.\n";
+	if (cmode == CMODE_FREEHUGS) {
+		ostr<<"HUG, HUG - sell a bug.\n"; eflush();
+	}
 
 	if (!is_valid_halgo(config::phash)) {
-		cerr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";
-		print_halgos();
-		cerr<<"\n"<<prefix<<"FAILED.\n";
+		estr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";
+		print_halgos(estr);
+		estr<<"\n"<<prefix<<"FAILED.\n";
+		eflush();
 		return -1;
 	}
 
 	if (!is_valid_calgo(config::calgo)) {
-		cerr<<prefix<<"Invalid crypto algorithm. Valid crypto algorithms are:\n\n";
-		print_calgos();
-		cerr<<"\n"<<prefix<<"FAILED.\n";
+		estr<<prefix<<"Invalid crypto algorithm. Valid crypto algorithms are:\n\n";
+		print_calgos(estr);
+		estr<<"\n"<<prefix<<"FAILED.\n";
+		eflush();
 		return -1;
 	}
 
@@ -904,43 +978,43 @@ int main(int argc, char **argv)
 
 	switch (cmode) {
 	case CMODE_ENCRYPT:
-		cerr<<prefix<<"encrypting for persona "<<idformat(dst_id)<< "\n";
+		estr<<prefix<<"encrypting for persona "<<idformat(dst_id)<< "\n"; eflush();
 		r = do_encrypt(dst_id);
 		break;
 	case CMODE_DECRYPT:
-		cerr<<prefix<<"decrypting\n";
+		estr<<prefix<<"decrypting\n"; eflush();
 		r = do_decrypt();
 		break;
 	case CMODE_SIGN:
-		cerr<<prefix<<"detached file-signing by persona "<<idformat(config::my_id)<<"\n";
+		estr<<prefix<<"detached file-signing by persona "<<idformat(config::my_id)<<"\n"; eflush();
 		r = do_sign();
 		break;
 	case CMODE_VERIFY:
-		cerr<<prefix<<"verifying detached file\n";
+		estr<<prefix<<"verifying detached file\n"; eflush();
 		r = do_verify(verify_file);
 		break;
 	case CMODE_NEWP:
-		cerr<<prefix<<"creating new persona (RSA "<<config::rsa_len<<", DH "<<config::dh_plen<<")\n\n";
+		estr<<prefix<<"creating new persona (RSA "<<config::rsa_len<<", DH "<<config::dh_plen<<")\n\n"; eflush();
 		r = do_new_rsa_persona(name);
 		break;
 	case CMODE_NEWDHP:
-		cerr<<prefix<<"creating new DHparams for persona "<<idformat(config::my_id)<<"\n\n";
+		estr<<prefix<<"creating new DHparams for persona "<<idformat(config::my_id)<<"\n\n"; eflush();
 		r = do_newdhparams();
 		break;
 	case CMODE_NEWECP:
-		cerr<<prefix<<"creating new EC persona (curve "<<config::curve<<")\n\n";
+		estr<<prefix<<"creating new EC persona (curve "<<config::curve<<")\n\n"; eflush();
 		r = do_new_ec_persona(name);
 		break;
 	case CMODE_IMPORT:
-		cerr<<prefix<<"importing persona\n";
+		estr<<prefix<<"importing persona\n"; eflush();
 		r = do_import(name);
 		break;
 	case CMODE_LINK:
-		cerr<<prefix<<"linking personas\n";
+		estr<<prefix<<"linking personas\n"; eflush();
 		r = do_link(link_src);
 		break;
 	case CMODE_LIST:
-		cerr<<prefix<<"persona list:\n";
+		estr<<prefix<<"persona list:\n"; eflush();
 		r = do_list(name);
 		break;
 	case CMODE_PGPLIST:
@@ -950,10 +1024,12 @@ int main(int argc, char **argv)
 
 	if (cmode != CMODE_PGPLIST) {
 		if (r == 0)
-			cerr<<prefix<<"SUCCESS.\n";
+			estr<<prefix<<"SUCCESS.\n";
 		else
-			cerr<<prefix<<"FAILED.\n";
+			estr<<prefix<<"FAILED.\n";
 	}
+
+	eflush();
 
 	return r;
 }

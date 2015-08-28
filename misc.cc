@@ -22,7 +22,7 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
-#include <iostream>
+#include <sstream>
 
 
 extern "C" {
@@ -111,18 +111,18 @@ const EVP_MD *algo2md(const string &s)
 }
 
 
-void print_halgos()
+void print_halgos(ostringstream &os)
 {
 	map<string, int> m{
 	        {"sha256", 1}, {"sha512", 1}, {"ripemd160", 1}
 	};
 
 	for (auto i = m.begin(); i != m.end(); ++i)
-		cerr<<prefix<<i->first<<endl;
+		os<<prefix<<i->first<<endl;
 }
 
 
-void print_calgos()
+void print_calgos(ostringstream &os)
 {
 	extern const string prefix;
 	map<string, int> m{
@@ -134,10 +134,10 @@ void print_calgos()
 	};
 
 	for (auto i = m.begin(); i != m.end(); ++i) {
-		cerr<<prefix<<i->first;
+		os<<prefix<<i->first;
 		if (i->second)
-			cerr<<" (default)";
-		cerr<<endl;
+			os<<" (default)";
+		os<<endl;
 	}
 }
 
