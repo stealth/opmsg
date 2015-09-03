@@ -245,9 +245,6 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			return build_error("encrypt::EVP_PKEY_keygen:", -1);
 		unique_ptr<EVP_PKEY, EVP_PKEY_del> my_ec(ppkey, EVP_PKEY_free);
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(my_ec.get(), nullptr), EVP_PKEY_CTX_free);
-
-		/*if (EVP_PKEY_type(ec_dh->pub->type == EVP_PKEY_DH)
-			EVP_PKEY_CTX_ctrl(ctx2.get(), EVP_PKEY_CTRL_DH_KDF_TYPE, EVP_PKEY_DH_KDF_NONE, nullptr);*/
 		if (EVP_PKEY_derive_init(ctx2.get()) != 1)
 			return build_error("encrypt::EVP_PKEY_derive_init: ", -1);
 		if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh->pub) != 1)

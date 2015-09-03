@@ -18,8 +18,8 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __keystore_h__
-#define __keystore_h__
+#ifndef opmsg_keystore_h
+#define opmsg_keystore_h
 
 
 #include <map>

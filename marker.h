@@ -18,6 +18,9 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef opmsg_marker_h
+#define opmsg_marker_h
+
 #include <string>
 
 namespace opmsg {
@@ -62,4 +65,6 @@ extern std::string ec, dh, rsa, unknown;
 }
 
 }
+
+#endif
 

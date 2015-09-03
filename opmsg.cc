@@ -74,7 +74,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.51 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -100,9 +100,6 @@ void oflush()
 
 void usage(const char *p)
 {
-	estr<<banner;
-	eflush();
-
 	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
@@ -826,6 +823,9 @@ int main(int argc, char **argv)
 	cout.unsetf(ios::unitbuf);
 	cerr.unsetf(ios::unitbuf);
 
+	estr<<banner;
+	eflush();
+
 	if (argc == 1)
 		usage(argv[0]);
 
@@ -836,15 +836,27 @@ int main(int argc, char **argv)
 		config::cfgbase = argv[2];
 	}
 
-	mkdir(config::cfgbase.c_str(), 0700);
-	parse_config(config::cfgbase);
+	if (mkdir(config::cfgbase.c_str(), 0700) < 0 && errno != EEXIST) {
+		estr<<prefix<<"mkdir: "<<strerror(errno)<<"\nFAILED.\n"; eflush();
+		return -1;
+	}
+	if (parse_config(config::cfgbase) < 0) {
+		estr<<prefix<<"WARN: No readable config file found.\n";
+		eflush();
+	}
 
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_int;
-	sigaction(SIGINT, &sa, nullptr);
+	if (sigaction(SIGINT, &sa, nullptr) < 0) {
+		estr<<prefix<<"sigaction: "<<strerror(errno)<<"\nFAILED.\n"; eflush();
+		return -1;
+	}
 	sa.sa_handler = SIG_IGN;
-	sigaction(SIGPIPE, &sa, nullptr);
+	if (sigaction(SIGPIPE, &sa, nullptr) < 0) {
+		estr<<prefix<<"sigaction: "<<strerror(errno)<<"\nFAILED.\n"; eflush();
+		return -1;
+	}
 
 
 	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
@@ -929,10 +941,6 @@ int main(int argc, char **argv)
 
 	if (cmode == CMODE_INVALID)
 		usage(argv[0]);
-
-	if (cmode != CMODE_PGPLIST) {
-		estr<<banner; eflush();
-	}
 
 	if (cmode == CMODE_FREEHUGS) {
 		ostr<<"HUG, HUG - sell a bug.\n"; oflush();

@@ -388,8 +388,10 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		string nfile = tmpdir + "/name";
 		if ((fd = open(nfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
-		write(fd, name.c_str(), name.size());
-		write(fd, "\n", 1);
+		if (write(fd, name.c_str(), name.size()) < 0)
+			return build_error("add_persona::write:", nullptr);
+		if (write(fd, "\n", 1) != 1)
+			return build_error("add_persona::write:", nullptr);;
 		close(fd);
 	}
 

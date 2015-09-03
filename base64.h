@@ -18,8 +18,8 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __base64_h__
-#define __base64_h__
+#ifndef opmsg_base64_h
+#define opmsg_base64_h
 
 #include <sys/types.h>
 #include <string>

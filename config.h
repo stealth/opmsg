@@ -18,8 +18,8 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __config_h__
-#define __config_h__
+#ifndef opmsg_config_h
+#define opmsg_config_h
 
 #include <string>
 

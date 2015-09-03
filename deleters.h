@@ -18,8 +18,8 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __deleters_h__
-#define __deleters_h__
+#ifndef opmsg_deleters_h
+#define opmsg_deleters_h
 
 extern "C" {
 #include <openssl/evp.h>

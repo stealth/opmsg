@@ -18,8 +18,8 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#ifndef __message_h__
-#define __message_h__
+#ifndef opmsg_message_h
+#define opmsg_message_h
 
 #include <string>
 #include <vector>
