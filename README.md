@@ -24,6 +24,7 @@ Features:
   from mail address to defeat meta data collection
 * configurable well-established hash and crypto algorithms
   and key lengths (RSA, DH, EC, AES)
+* deniable messages (see persona self-linking)
 * straight forward and open key storage, basically also managable via
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
@@ -230,6 +231,42 @@ Given proper mail provider support (e.g. inboxes are created on the fly
 for addresses like hexid@example.com), the global surveillance meta graph would
 just contain pairs of communication partners. No clusters, just islands
 of 1:1 mappings.
+
+
+Persona self-linking
+--------------------
+
+There may be valid scenarios where you dont want your communication peer to have a way to proof
+that you wrote a certain message. Since op messages are always signed with your persona
+key, he could proof that you were expressing illegal thoughts. So you want deniable messages
+that are sill integrity protected. The OTR protocol is handling this by sharing the public as
+well as the private key for a dedicated communication session between both peers.
+
+_opmsg_ allows to do the same. It requires an additional communication step with a peer
+that you already imported once and which you suspect to forward your mails that
+you sent him to he FBI.
+
+It is recommended to use EC personas for that, as this step requires to:
+
+* one peer to generate a dedicated _new_ EC persona and also send
+  along the private half `~/.opmsg/$NEW_ID/ec.priv.pem` over the already existing secure (_opmsg_) channel
+* the other one to import and check this EC persona as usual and to copy the received private half to
+  `~/.opmsg/$NEW_ID/ec.priv.pem`
+* both peers link this new dedicated EC persona to itself:
+  `opmsg --link $NEW_ID --persona $NEW_ID`
+
+Then both peers share the public and secret part of the persona whose id is `$NEW_ID`.
+As this persona is linked to itself, whenever you send something to the peer the
+signing key is shared with _that_ peer. You can always deny that you sent this message
+as your peer could also have signed it (`src-id` and `dst-id` inside the message are the same).
+Do not share any key material of this dedicated new EC persona to anyone else. Its only for
+this dedicated communication peer.
+
+Of course for this to work you also want to have fully encrypted your disk to leave no
+forensic artifacts and dont want to cite your peer in reply-messages as this proofs
+that you were able to decrypt a mail from your peer, e.g. you are hold of a certain
+private session key (`kex-id`). Thats a common mistake people make who dont sign
+their emails and think everything is deniable.
 
 
 Keys

@@ -74,7 +74,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.51 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.52 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -314,6 +314,7 @@ int do_sign()
 int do_encrypt(const string &dst_id)
 {
 	int r1 = 0, r2 = 0;
+	bool linked_to_myself = 0;
 
 	unique_ptr<persona> dst_persona(nullptr), src_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
@@ -336,8 +337,16 @@ int do_encrypt(const string &dst_id)
 			return -1;
 		}
 		// any default src linked to this target? override!
-		if (dst_p->linked_src().size() > 0)
+		if (dst_p->linked_src().size() > 0) {
 			config::my_id = dst_p->linked_src();
+
+			// check if that persona was linked to itself. That means OTR-like sharing
+			// of the EC/RSA persona secret and Kex-id's chosen for encryption must not have
+			// the secret part on our keysore since peer who is decrypting, would be missing it.
+			// Only Kex-id's with missing secret part have the secret part at the peer side.
+			if (config::my_id == dst_p->get_id())
+				linked_to_myself = 1;
+		}
 
 		if (!(src_p = ks->find_persona(config::my_id))) {
 			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
@@ -354,8 +363,13 @@ int do_encrypt(const string &dst_id)
 			return -1;
 		}
 		// any default src linked to this target? override!
-		if (dst_p->linked_src().size() > 0)
+		if (dst_p->linked_src().size() > 0) {
 			config::my_id = dst_p->linked_src();
+
+			// see above comment
+			if (config::my_id ==  dst_p->get_id())
+				linked_to_myself = 1;
+		}
 
 		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
 		if (!(src_p = src_persona.get())) {
@@ -392,6 +406,10 @@ int do_encrypt(const string &dst_id)
 	if (!config::native_crypt) {
 		for (auto i = dst_p->first_key(); i != dst_p->end_key(); i = dst_p->next_key(i)) {
 			if (i->second->can_encrypt()) {
+				// only keys that peer sent us for import, so ignore (EC)DH keys
+				// where we also store the private half
+				if (linked_to_myself && i->second->can_decrypt())
+					continue;
 				kex_id = i->first;
 				break;
 			}
