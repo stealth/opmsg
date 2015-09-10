@@ -74,7 +74,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.55 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.60 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -290,7 +290,7 @@ int do_sign()
 		return -1;
 	}
 
-	message msg(config::cfgbase, config::phash, config::khash, config::shash, "null");
+	message msg(config::version, config::cfgbase, config::phash, config::khash, config::shash, "null");
 	msg.src_id(my_p->get_id());
 	msg.dst_id(my_p->get_id());
 
@@ -396,7 +396,7 @@ int do_encrypt(const string &dst_id)
 		return -1;
 	}
 
-	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
+	message msg(config::version, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 	msg.src_id(src_p->get_id());
 	msg.dst_id(dst_p->get_id());
 
@@ -496,7 +496,10 @@ int do_decrypt()
 	// cut off anything at the end
 	ctext.erase(pos + marker::opmsg_end.size());
 
-	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
+	message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
+
+	if (config::peer_isolation)
+		msg.enable_peer_isolation();
 
 	if (msg.decrypt(ctext) < 0) {
 		estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl; eflush();
@@ -540,7 +543,7 @@ int do_verify(const string &verify_file)
 		return -1;
 	}
 
-	message msg(config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
+	message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 
 	if (msg.decrypt(ctext) < 0) {
 		estr<<prefix<<"ERROR: verifying message: "<<msg.why()<<endl; eflush();

@@ -33,6 +33,10 @@ extern std::string rsa_e;
 extern std::string infile, outfile, calgo, idformat, my_id;
 extern std::string phash, shash, khash, cfgbase, curve;
 
+extern unsigned int version;
+
+extern unsigned int peer_isolation;
+
 extern bool burn;
 
 }

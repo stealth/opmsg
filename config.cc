@@ -42,6 +42,9 @@ int new_dh_keys = 3;
 
 int native_crypt = 0;
 
+unsigned int version = 1;
+unsigned int peer_isolation = 0;
+
 std::string rsa_e = "65537";
 
 std::string calgo = "aes128cbc";
@@ -116,6 +119,8 @@ int parse_config(const string &cfgbase)
 			config::khash = sline.substr(6);
 		else if (sline.find("rsa_e=") == 0)
 			config::rsa_e = sline.substr(6);
+		else if (sline.find("peer_isolation=") == 0)
+			config::peer_isolation = strtoul(sline.substr(15).c_str(), nullptr, 0);
 		else if (sline.find("rsa_len=") == 0) {
 			config::rsa_len = strtoul(sline.substr(8).c_str(), nullptr, 0);
 			if (config::rsa_len < 1024 || config::rsa_len > 16000)
@@ -134,6 +139,10 @@ int parse_config(const string &cfgbase)
 			config::native_crypt = 1;
 		else if (sline == "burn")
 			config::burn = 1;
+		else if (sline == "version=1")
+			config::version = 1;
+		else if (sline == "version=2")
+			config::version = 2;
 		else if (sline == "curve=secp521r1") {
 			config::curve = "secp521r1";
 			config::curve_nid = NID_secp521r1;

@@ -47,13 +47,13 @@ using namespace std;
 static string::size_type lwidth = 80, max_sane_string = 0x1000;
 
 
-//                                                                         64
-static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_KEY_LENGTH])
+//                                                                                                                                          64
+static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const string &s1, const string &s2, unsigned char key[OPMSG_MAX_KEY_LENGTH])
 {
 	unsigned int hlen = 0;
 	unsigned char digest[EVP_MAX_MD_SIZE];	// 64 which matches sha512
 
-	if (slen <= 0)
+	if (slen <= 0 || (vers != 1 && vers != 2))
 		return -1;
 	memset(key, 0xff, OPMSG_MAX_KEY_LENGTH);
 
@@ -64,8 +64,19 @@ static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_K
 		return -1;
 	if (EVP_DigestUpdate(md_ctx.get(), secret, slen) != 1)
 		return -1;
-	if (EVP_DigestUpdate(md_ctx.get(), marker::version.c_str(), marker::version.size()) != 1)
-		return -1;
+
+	if (vers == 1) {
+		if (EVP_DigestUpdate(md_ctx.get(), marker::version1.c_str(), marker::version1.size()) != 1)
+			return -1;
+	} else if (vers == 2) {
+		if (EVP_DigestUpdate(md_ctx.get(), marker::version2.c_str(), marker::version2.size()) != 1)
+			return -1;
+		if (EVP_DigestUpdate(md_ctx.get(), s1.c_str(), s1.size()) != 1)
+			return -1;
+		if (EVP_DigestUpdate(md_ctx.get(), s2.c_str(), s2.size()) != 1)
+			return -1;
+	}
+
 	if (EVP_DigestFinal_ex(md_ctx.get(), digest, &hlen) != 1)
 		return -1;
 
@@ -73,6 +84,12 @@ static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_K
 		hlen = OPMSG_MAX_KEY_LENGTH;
 	memcpy(key, digest, hlen);
 	return 0;
+}
+
+
+static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_KEY_LENGTH])
+{
+	return kdf_v12(1, secret, slen, "", "", key);
 }
 
 
@@ -174,6 +191,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (RAND_bytes(iv, sizeof(iv)) != 1)
 		return build_error("encrypt::RAND_bytes:", -1);
 
+	// this is only to not directly use random bytes in the IV. No real 'KDF' and hence v1.
 	if (kdf_v1(iv, sizeof(iv), iv_kdf) < 0)
 		return build_error("encrypt: Error deriving IV: ", -1);
 	memcpy(iv, iv_kdf, sizeof(iv));
@@ -196,7 +214,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			return build_error("encrypt::" + err, -1);
 
 		outmsg.insert(0, b64sig);
-		outmsg.insert(0, marker::version);
+		if (version == 1)
+			outmsg.insert(0, marker::version1);
+		else
+			outmsg.insert(0, marker::version2);
 		outmsg.insert(0, marker::opmsg_begin);
 		outmsg += marker::opmsg_end;
 		raw = outmsg;
@@ -313,7 +334,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	outmsg += marker::opmsg_databegin;
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v1(secret.get(), slen, key) < 0)
+	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("encrypt: Error deriving key: ", -1);
 	EVP_CIPHER_CTX_init(&c_ctx);
 	if (EVP_EncryptInit_ex(&c_ctx, algo2cipher(calgo), nullptr, key, iv) != 1)
@@ -378,7 +399,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return build_error("encrypt::" + err, -1);
 
 	outmsg.insert(0, b64sig);
-	outmsg.insert(0, marker::version);
+	if (version == 1)
+		outmsg.insert(0, marker::version1);
+	else
+		outmsg.insert(0, marker::version2);
 	outmsg.insert(0, marker::opmsg_begin);
 	outmsg += marker::opmsg_end;
 
@@ -411,24 +435,29 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Not in OPMSGv1 format (1).", -1);
 	raw.erase(0, pos + marker::opmsg_begin.size());
 
-	// next must come "version=1", nuke it
-	if ((pos = raw.find(marker::version)) != 0)
-		return build_error("decrypt: Not in OPMSGv1 format (2). Need to update opmsg?", -1);
-	raw.erase(0, pos + marker::version.size());
+	version = 1;
+	// next must come "version=1" or "version=2", nuke it
+	if ((pos = raw.find(marker::version1)) != 0) {
+		version = 2;
+		if ((pos = raw.find(marker::version2)) != 0)
+			return build_error("decrypt: Not in OPMSGv1/2 format (2). Need to update opmsg?", -1);
+	}
+
+	raw.erase(0, pos + marker::version1.size());
 
 	// nuke OPMSg trailer, its also not part of signing. Do not accept junk after
 	// footer.
 	if ((pos = raw.find(marker::opmsg_end)) == string::npos || pos + marker::opmsg_end.size() != raw.size())
-		return build_error("decrypt: Not in OPMSGv1 format (3).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (3).", -1);
 	raw.erase(pos, marker::opmsg_end.size());
 
 	// next must come signature b64 sigblob
 	if ((pos = raw.find(marker::sig_begin)) != 0 || (pos_sigend = raw.find(marker::sig_end)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (4).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (4).", -1);
 
 	// weird or unreasonable large signature?
 	if (pos_sigend >= max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1 format (5).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (5).", -1);
 
 	string b64sig = raw.substr(marker::sig_begin.size(), pos_sigend - marker::sig_begin.size());
 	raw.erase(0, pos_sigend + marker::sig_end.size());
@@ -441,17 +470,17 @@ int message::decrypt(string &raw)
 	//
 
 	if ((pos = raw.find(marker::algos)) != 0)
-		return build_error("decrypt: Not in OPMSGv1 format (6).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (6).", -1);
 
 	char b[5][64];
 	for (i = 0; i < 5; ++i)
 		memset(b[i], 0, sizeof(b[0]));
 	if (sscanf(raw.c_str() + marker::algos.size(), "%32[^:]:%32[^:]:%32[^:]:%32[^:]:%32[^\n]", b[0], b[1], b[2], b[3], b[4]) != 5)
-		return build_error("decrypt: Not in OPMSGv1 format (7).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (7).", -1);
 
 	phash = b[0]; khash = b[1]; shash = b[2]; calgo = b[3];
 	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
-		return build_error("decrypt: Not in OPMSGv1 format (8). Invalid algo name. Need to update opmsg?", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (8). Invalid algo name. Need to update opmsg?", -1);
 
 	bool has_aad = (calgo.find("gcm") != string::npos);
 
@@ -476,14 +505,14 @@ int message::decrypt(string &raw)
 
 	// src persona
 	if ((pos = raw.find(marker::src_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (9).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (9).", -1);
 	pos += marker::src_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt:: Not in OPMSGv1 format (10).", -1);
+		return build_error("decrypt:: Not in OPMSGv1/2 format (10).", -1);
 	s = raw.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1 format (11).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (11).", -1);
 	src_id_hex = s;
 
 	// for src persona, we only need native (RSA or EC) key for signature validation
@@ -521,7 +550,7 @@ int message::decrypt(string &raw)
 		if ((nl = raw.find(marker::ec_dh_end, pos)) == string::npos)
 			break;
 		if (nl - pos > max_sane_string)
-			return build_error("decrypt: Not in OPMSGv1 format (12).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
 		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
 		ecdh_keys.push_back(newdh);
@@ -536,47 +565,47 @@ int message::decrypt(string &raw)
 	// if null encryption, thats all!
 	if (calgo == "null") {
 		if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-			return build_error("decrypt: Not in OPMSGv1 format (13).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (13).", -1);
 		raw.erase(0, pos + marker::opmsg_databegin.size());
 		return 0;
 	}
 
 	// kex id
 	if ((pos = raw.find(marker::kex_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (14).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (14).", -1);
 	pos += marker::kex_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1 format (15).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
 	s = raw.substr(pos, nl - pos);
 	bool has_dh_key = (s != marker::rsa_kex_id);
 	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1 format (16).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
 	kex_id_hex = s;
 
 	// the (EC)DH public part
 	if ((pos = raw.find(marker::kex_begin)) == string::npos || (nl = raw.find(marker::kex_end, pos)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (17).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
 	if (nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1 format (18).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
 	string b64_kexdh = raw.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
 	raw.erase(pos, nl - pos + marker::kex_end.size());
 	b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
 	string kexdh = "";
 	b64_decode(b64_kexdh, kexdh);
 	if (kexdh.empty())
-		return build_error("decrypt: Not in OPMSGv1 format (19).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
 
 	// dst persona
 	if ((pos = raw.find(marker::dst_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (20).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (20).", -1);
 	pos += marker::dst_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1 format (21).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (21).", -1);
 	s = raw.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1 format (22).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (22).", -1);
 	dst_id_hex = s;
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
@@ -587,9 +616,10 @@ int message::decrypt(string &raw)
 			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, -1);
 		if (!ec_dh->can_decrypt())
 			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, -1);
-		if (!ec_dh->matches_peer_id(src_id_hex))
+		if (peer_isolation && !ec_dh->matches_peer_id(src_id_hex))
 			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh->get_peer_id() +
-		                           ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again.", -1);
+			                   ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again\n"
+			                   "or set peer_isolation=0 in config file.\n", -1);
 	}
 
 	// Kex: (EC)DH if avail, RSA as fallback
@@ -676,11 +706,11 @@ int message::decrypt(string &raw)
 	}
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v1(secret.get(), slen, key) < 0)
+	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("decrypt: Error deriving key: ", -1);
 
 	if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1 format (23).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (23).", -1);
 	// nuke anything until we get just encrypted (b64) payload
 	raw.erase(0, pos + marker::opmsg_databegin.size());
 

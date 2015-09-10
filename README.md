@@ -224,8 +224,7 @@ your id from `b3c32d47dc8b58a6`, remove the `srclink` file inside this personas
 directory.
 
 If no link is found for a persona, the config file and given
-`--persona` argument is evaluated. Command line arguments
-override the config file settings.
+`--persona` argument is evaluated. Command line arguments override the config file settings.
 
 Given proper mail provider support (e.g. inboxes are created on the fly
 for addresses like hexid@example.com), the global surveillance meta graph would
@@ -348,12 +347,21 @@ Config file
 You need to setp up your local `~/.opmsg/config` to reflect
 the source persona you are using when sending your mail via _mutt_,
 unless you specify it via `-P` on the commandline or used `--link`:
+(linking personas is recommended, see above)
 
 
 ```
-# Should use long format to avoid loading of whole keystore.
-# this is above generated persona so it owns the RSA private key
-my_id = 1cb7992f966638531d33e59e83cd054295fb8016e5d9e35fb409630694571aba
+# opmsg sample config
+
+# 1 or 2. Default is 1. The KDF in version=2 is hardened against evil maid attacks.
+# Only use version=2 if you know your peer uses opmsg >= 1.60 that can handle version=2.
+# Your peer then automatically chooses right version. Theres no config change needed
+# for your peer.
+version=2
+
+# should use long format to avoid loading of whole keystore. Also see 'linking personas'
+# in README. It is recommended to use different ID for each communication peer.
+my_id = 50973f3cfc3e0f3f1a7d4047aa6fa7645510f3b4ddc486a4b72bcacdf3aad570
 
 # default
 rsa_len = 4096
@@ -363,20 +371,23 @@ dh_plen = 2048
 
 calgo = aes128ctr
 
-# split (default), long, short
-idformat = short
+idformat = split
 
-# number of new (EC)DH keys attached to msg, default is 3
 new_dh_keys = 3
 
-# EC curve to be used for EC personas.
+# EC curve to be used for EC personas (prefered since its faster)
 # Default. Other choices: secp521r1 (be aware: NIST curve!), brainpoolP320t1, brainpoolP384r1,
 # brainpoolP384t1, brainpoolP512r1, brainpoolP512t1
-curve = brainpoolP320r
-```
+curve = brainpoolP320r1
 
-However, any option could also be passed as a commandline argument to
-_opmsg_.
+# Check on decrypt whether the sender (src-id) used a kex-id that was once sent to him
+# as a dst-id.
+# This allows you detect cross-references for people using different src personas to
+# to contact a single persona of yours. This way you can detect/enforce isolation.
+# By default its disabled.
+peer_isolation=1
+
+```
 
 Supported ciphers
 -----------------

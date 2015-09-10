@@ -61,6 +61,8 @@ class message {
 	std::string phash, khash, shash, calgo;
 	std::string cfgbase, err;
 
+	bool peer_isolation;
+
 	template<class T>
 	T build_error(const std::string &msg, T r)
 	{
@@ -83,9 +85,9 @@ public:
 
 	std::vector<std::string> ecdh_keys;	// either DH or ECDH keys
 
-	message(const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
-		: version(1), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
-	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err("")
+	message(unsigned int vers, const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
+		: version(vers), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
+	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""), peer_isolation(0)
 	{
 	}
 
@@ -136,6 +138,11 @@ public:
 	std::string get_calgo()
 	{
 		return calgo;
+	}
+
+	void enable_peer_isolation()
+	{
+		peer_isolation = 1;
 	}
 
 	int decrypt(std::string &msg);
