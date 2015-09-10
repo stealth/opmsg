@@ -594,6 +594,26 @@ int persona::load_dh(const string &hex)
 	if (!has_pub && !has_priv) {
 		delete keys[hex];
 		keys.erase(hex);
+
+		errno = 0;
+		return 0;
+	}
+
+	// check if there was a designated peer. No problem if there isn't.
+	string peerfile = cfgbase + "/" + id + "/" + hex + "/peer";
+	f.reset(fopen(peerfile.c_str(), "r"));
+	if (f.get()) {
+		char s[512];
+		memset(s, 0, sizeof(s));
+		fgets(s, sizeof(s) - 1, f.get());
+		size_t slen = strlen(s);
+		if (slen > 0) {
+			if (s[slen - 1] == '\n')
+				s[slen - 1] = 0;
+		}
+		string peer = string(s);
+		if (is_hex_hash(peer))
+			keys[hex]->set_peer_id(peer);
 	}
 
 	errno = 0;
@@ -785,6 +805,9 @@ DHbox *persona::new_dh_params(const string &pem)
 		delete dh_params;
 
 	dh_params = new (nothrow) DHbox(dh, nullptr);
+	if (!dh_params)
+		return build_error("new_dh_params::OOM", nullptr);
+
 	dh_params->pub_pem = pem;
 
 	return dh_params;
@@ -808,7 +831,7 @@ DHbox *persona::new_dh_params()
 #if HAVE_BN_GENCB_NEW
 	unique_ptr<BN_GENCB, BN_GENCB_del> cb(BN_GENCB_new(), BN_GENCB_free);
 	if (!(cb_ptr = cb.get()))
-		return build_error("gen_rsa: OOM", nullptr);
+		return build_error("new_dh_params: OOM", nullptr);
 #else
 	BN_GENCB cb_s;
 	cb_ptr = &cb_s;
@@ -838,6 +861,9 @@ DHbox *persona::new_dh_params()
 		delete dh_params;
 
 	dh_params = new (nothrow) DHbox(dh.release(), nullptr);
+	if (!dh_params)
+		return build_error("new_dh_params::OOM", nullptr);
+
 	dh_params->pub_pem = string(buf, r);
 
 	// do not call DH_free(dh)
@@ -846,25 +872,31 @@ DHbox *persona::new_dh_params()
 }
 
 
-PKEYbox *persona::gen_dh_key(const string &hash)
+// get a new ephemeral (session, kex-id) key. Bind to a destination peer if given
+PKEYbox *persona::gen_kex_key(const string &hash, const string &peer)
 {
-	return gen_dh_key(algo2md(hash));
+	return gen_kex_key(algo2md(hash), peer);
 }
 
 
-PKEYbox *persona::gen_ecdh_key(const EVP_MD *md)
+PKEYbox *persona::gen_kex_key(const EVP_MD *md, const string &peer)
 {
 	struct stat st;
 	int fd = -1;
 
 	string pub_pem = "", priv_pem = "", hex = "";
 
-	err = "persona::gen_ecdh_key::";
-	if (opmsg::gen_ec(pub_pem, priv_pem, err) < 0)
-		return nullptr;
-	err = "";
-	if (normalize_and_hexhash(md, pub_pem, hex) < 0)
-		return build_error("gen_ecdh_key::normalize_and_hexhash: Cant hash key.", nullptr);
+	if (ptype == marker::ec) {
+		err = "persona::gen_kex_key::";
+		if (opmsg::gen_ec(pub_pem, priv_pem, err) < 0)
+			return nullptr;
+		err = "";
+		if (normalize_and_hexhash(md, pub_pem, hex) < 0)
+			return build_error("gen_kex_key::normalize_and_hexhash: Cant hash key.", nullptr);
+	} else {
+		if (this->gen_dh_key(md, pub_pem, priv_pem, hex) < 0)
+			return nullptr;
+	}
 
 	// unlikely...
 	if (keys.count(hex) > 0)
@@ -872,41 +904,54 @@ PKEYbox *persona::gen_ecdh_key(const EVP_MD *md)
 
 	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
 	if (!bio.get())
-		return build_error("gen_ecdh_key: OOM", nullptr);
+		return build_error("gen_kex_key: OOM", nullptr);
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp_pub.get())
-		return build_error("gen_ecdh_key::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
+		return build_error("gen_kex_key::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
 
 	bio.reset(BIO_new_mem_buf(strdup(priv_pem.c_str()), priv_pem.size()));
 	if (!bio.get())
-		return build_error("gen_ecdh_key: OOM", nullptr);
+		return build_error("gen_kex_key: OOM", nullptr);
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp_priv.get())
-		return build_error("gen_ecdh_key::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
+		return build_error("gen_kex_key::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
 
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
-		return build_error("gen_ecdh_key::mkdir:", nullptr);
+		return build_error("gen_kex_key::mkdir:", nullptr);
 
 	string dhfile1 = tmpdir + "/dh.pub.pem";
 	if ((fd = open(dhfile1.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
-		return build_error("gen_ecdh_key::open:", nullptr);
+		return build_error("gen_kex_key::open:", nullptr);
 	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
 	if (!f.get())
-		return build_error("gen_ecdh_key::fdopen:", nullptr);
+		return build_error("gen_kex_key::fdopen:", nullptr);
 	if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
-		return build_error("gen_ecdh_key::fwrite:", nullptr);
+		return build_error("gen_kex_key::fwrite:", nullptr);
 	f.reset();
 	string dhfile2 = tmpdir + "/dh.priv.pem";
 	if ((fd = open(dhfile2.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
-		return build_error("gen_ecdh_key::open:", nullptr);
+		return build_error("gen_kex_key::open:", nullptr);
 	f.reset(fdopen(fd, "r+"));
 	if (!f.get())
-		return build_error("gen_ecdh_key::fdopen:", nullptr);
+		return build_error("gen_kex_key::fdopen:", nullptr);
 	if (fwrite(priv_pem.c_str(), priv_pem.size(), 1, f.get()) != 1)
-		return build_error("gen_ecdh_key::fwrite:", nullptr);
+		return build_error("gen_kex_key::fwrite:", nullptr);
 	f.reset();
+
+	string peerfile = tmpdir + "/peer";
+	// record any given designated peer
+	// really an "if". But errors here are non-fatal and may be "break" ed
+	while (peer.size() > 0 && is_hex_hash(peer)) {
+		if ((fd = open(peerfile.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600)) < 0)
+			break;
+		string s = peer + "\n";
+		if (write(fd, s.c_str(), s.size()) < 0)
+			unlink(peerfile.c_str());
+		close(fd);
+		break;
+	}
 
 	string hexdir = cfgbase + "/" + id + "/" + hex;
 
@@ -914,109 +959,69 @@ PKEYbox *persona::gen_ecdh_key(const EVP_MD *md)
 	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		unlink(dhfile1.c_str());
 		unlink(dhfile2.c_str());
+		unlink(peerfile.c_str());
 		rmdir(tmpdir.c_str());
-		return build_error("gen_ecdh_key: Error storing ECDH keys " + hex, nullptr);
+		return build_error("gen_kex_key: Error storing ECDH keys " + hex, nullptr);
 	}
 
-	PKEYbox *pbox = new PKEYbox(evp_pub.release(), evp_priv.release());
+	PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), evp_priv.release());
+	if (!pbox)
+		return build_error("gen_kex_key: OOM", nullptr);
+
 	pbox->pub_pem = pub_pem;
 	pbox->priv_pem = priv_pem;
 	pbox->hex = hex;
+	pbox->set_peer_id(peer);
 	keys[hex] = pbox;
 	return pbox;
 }
 
 
-// create an entirely new DH key (based on DH params) for this persona. Key will
-// later be used to decrypt incoming msg, using existing private half of saved DH
-PKEYbox *persona::gen_dh_key(const EVP_MD *md)
+// get a new ephemeral (session, kex-id) DH key.
+int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex)
 {
-	char buf[8192];
-	int fd = -1, ecode = 0;
-	size_t r = 0;
-
-	if (ptype == marker::ec)
-		return gen_ecdh_key(md);
+	char *ptr = nullptr;
+	int ecode = 0;
 
 	if (!dh_params)
-		return build_error("gen_dh_key: Invalid persona. No DH params for " + id, nullptr);
+		return build_error("gen_dh_key: Invalid persona. No DH params for " + id, -1);
 
-	if (RAND_load_file("/dev/urandom", 256) != 256)
-		RAND_load_file("/dev/random", 8);
+	unique_ptr<DH, DH_del> dh(DHparams_dup(dh_params->pub), DH_free);
+	if (!dh.get() || DH_generate_key(dh.get()) != 1 || DH_check(dh.get(), &ecode) != 1)
+		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + id, -1);
 
-	unique_ptr<DH, DH_del> dh1(DHparams_dup(dh_params->pub), DH_free);
-	if (!dh1.get() || DH_generate_key(dh1.get()) != 1 || DH_check(dh1.get(), &ecode) != 1)
-		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + id, nullptr);
+	hex = "";
+	pub = "";
+	priv = "";
 
-	string hex = "";
-	if (bn2hexhash(md, dh1->pub_key, hex) < 0)
-		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", nullptr);
+	if (bn2hexhash(md, dh->pub_key, hex) < 0)
+		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", -1);
 
-	// that case would be really weird...
-	if (keys.count(hex) > 0)
-		return keys[hex];
+	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
+	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
+	if (!evp.get() || !bio.get())
+		return build_error("gen_dh_key:: OOM", -1);
 
-	string dhdir = cfgbase + "/" + id + "/" + hex;
+	if (EVP_PKEY_set1_DH(evp.get(), dh.get()) != 1)
+		return build_error("gen_dh_key::EVP_PKEY_set1_EC_KEY: Error generating DH key", -1);
 
-	if (mkdir(dhdir.c_str(), 0700) < 0) {
-		if (errno != EEXIST)
-			return build_error("gen_dh_key::mkdir: Error creating DH dir for " + hex, nullptr);
-	}
+	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1)
+		return build_error("gen_dh_key::PEM_write_bio_PUBKEY: Error generating DH key", -1);
 
-	string dhpub = dhdir + "/dh.pub.pem";
-	if ((fd = open(dhpub.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600)) < 0)
-		return build_error("gen_dh_key::open: Error creating DH pubfile " + hex, nullptr);
-	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
-	if (!f.get()) {
-		close(fd);
-		return build_error("gen_dh_key::fdopen:", nullptr);
-	}
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp1(EVP_PKEY_new(), EVP_PKEY_free);
-	if (!evp1.get())
-		return build_error("gen_dh_key::EVP_PKEY_new: OOM", nullptr);
-	if (EVP_PKEY_set1_DH(evp1.get(), dh1.get()) != 1)
-		return build_error("gen_dh_key::EVP_PKEY_set1_DH: invalid DH pubkey " + hex, nullptr);
-	if (PEM_write_PUBKEY(f.get(), evp1.get()) != 1) {
-		unlink(dhpub.c_str());
-		rmdir(dhdir.c_str());
-		return build_error("gen_dh_key::PEM_write_PUBKEY: Error writing DH pubfile " + hex, nullptr);
-	}
-	rewind(f.get());
-	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-		return build_error("gen_dh_key::fread: invalid DH pubkey " + hex, nullptr);
-	string pub_pem = string(buf, r);
-	rewind(f.get());
+	long l = BIO_get_mem_data(bio.get(), &ptr);
+	pub = string(ptr, l);
 
-	// re-read PEM pubkey, to have distict public key in evp2 for PKEYbox()
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp2(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp2.get())
-		return build_error("gen_dh_key::PEM_read_PUBKEY: invalid DH pubkey " + hex, nullptr);
-	f.reset(); // closes f and fd
+	bio.reset(BIO_new(BIO_s_mem()));
+	if (!bio.get())
+		return build_error("gen_dh_key::BIO_new: OOM", -1);
 
-	string dhpriv = dhdir + "/dh.priv.pem";
-	if ((fd = open(dhpriv.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600)) < 0)
-		return build_error("gen_dh_key::open: Error creating DH privfile " + hex, nullptr);
-	f.reset(fdopen(fd, "r+"));
-	if (!f.get()) {
-		close(fd);
-		return build_error("gen_dh_key::fdopen: OOM", nullptr);
-	}
-	if (PEM_write_PrivateKey(f.get(), evp1.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1) {
-		unlink(dhpriv.c_str());
-		return build_error("gen_dh_key::PEM_write_PrivateKey: Error writing DH privfile " + hex, nullptr);
-	}
-	rewind(f.get());
-	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-		return build_error("gen_dh_key::fread: invalid DH privkey " + hex, nullptr);
-	string priv_pem = string(buf, r);
+	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
+		return build_error("gen_dh_key::PEM_write_bio_PrivateKey: Error generating DH key", -1);
 
-	PKEYbox *pbox = new PKEYbox(evp2.release(), evp1.release());
-	pbox->pub_pem = pub_pem;
-	pbox->priv_pem = priv_pem;
-	pbox->hex = hex;
-	keys[hex] = pbox;
+	l = BIO_get_mem_data(bio.get(), &ptr);
+	priv = string(ptr, l);
 
-	return pbox;
+	return 0;
 }
 
 
@@ -1095,7 +1100,9 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, nullptr);
 	}
 
-	PKEYbox *pbox = new PKEYbox(evp_pub.release(), nullptr);
+	PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), nullptr);
+	if (!pbox)
+		return build_error("add_dh_pubkey:: OOM", nullptr);
 	pbox->pub_pem = pub_pem;
 	pbox->hex = hex;
 	keys[hex] = pbox;
@@ -1130,6 +1137,7 @@ int persona::del_dh_priv(const string &hex)
 
 	string file = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
 	string used = cfgbase + "/" + id + "/" + hex + "/used";
+	string peer = cfgbase + "/" + id + "/" + hex + "/peer";
 
 	struct stat st;
 	if (stat(file.c_str(), &st) < 0)
@@ -1149,6 +1157,7 @@ int persona::del_dh_priv(const string &hex)
 
 	unlink(file.c_str());
 	unlink(used.c_str());
+	unlink(peer.c_str());
 
 	auto i = keys.find(hex);
 	if (i != keys.end()) {

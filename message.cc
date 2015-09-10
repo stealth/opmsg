@@ -486,7 +486,7 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Not in OPMSGv1 format (11).", -1);
 	src_id_hex = s;
 
-	// for src persona, we only need RSA keys for signature validation
+	// for src persona, we only need native (RSA or EC) key for signature validation
 	unique_ptr<persona> src_persona(new (nothrow) persona(cfgbase, src_id_hex));
 	if (!src_persona.get() || src_persona->load(marker::rsa_kex_id) < 0 || !src_persona->can_verify())
 		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, -1);
@@ -587,6 +587,9 @@ int message::decrypt(string &raw)
 			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, -1);
 		if (!ec_dh->can_decrypt())
 			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, -1);
+		if (!ec_dh->matches_peer_id(src_id_hex))
+			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh->get_peer_id() +
+		                           ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again.", -1);
 	}
 
 	// Kex: (EC)DH if avail, RSA as fallback

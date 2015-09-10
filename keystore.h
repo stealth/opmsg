@@ -47,45 +47,6 @@ extern "C" {
 namespace opmsg {
 
 
-class RSAbox {
-
-public:
-
-	RSA *pub, *priv;
-
-	std::string pub_pem, priv_pem, hex;
-
-
-	RSAbox(RSA *p, RSA *s)
-		: pub(p), priv(s), pub_pem(""), priv_pem(""), hex("")
-	{
-	}
-
-	virtual ~RSAbox()
-	{
-		if (pub)
-			RSA_free(pub);
-		if (priv)
-			RSA_free(priv);
-	}
-
-	bool can_sign()
-	{
-		return priv != nullptr;
-	}
-
-	bool can_decrypt()
-	{
-		return priv != nullptr;
-	}
-
-	bool can_encrypt()
-	{
-		return pub != nullptr;
-	}
-};
-
-
 class PKEYbox {
 
 public:
@@ -94,9 +55,16 @@ public:
 
 	std::string pub_pem, priv_pem, hex;
 
+	/* The peer id is assigned if new ephemeral keys are generated to be attached to
+	 * a message that is destinated to a certain persona. Only this persona (peer id)
+	 * should eventually come back with a kex-id referencing _this_ key. This only affects
+	 * Kex keys, not persona keys. It is OK to have an empty peer id.
+	 */
+	std::string peer_id;
+
 
 	PKEYbox(EVP_PKEY *p, EVP_PKEY *s)
-		: pub(p), priv(s), pub_pem(""), priv_pem(""), hex("")
+		: pub(p), priv(s), pub_pem(""), priv_pem(""), hex(""), peer_id("")
 	{
 	}
 
@@ -121,6 +89,25 @@ public:
 	bool can_encrypt()
 	{
 		return pub != nullptr;
+	}
+
+	bool matches_peer_id(const std::string &s)
+	{
+		// If no designated peer was recorded, any peer is OK
+		if (peer_id.size() == 0)
+			return 1;
+		return peer_id == s;
+	}
+
+	std::string get_peer_id()
+	{
+		return peer_id;
+	}
+
+
+	void set_peer_id(const std::string &s)
+	{
+		peer_id = s;
 	}
 };
 
@@ -238,7 +225,7 @@ public:
 		return can_sign();
 	}
 
-	bool can_gen_dh()
+	bool can_kex_gen()
 	{
 		if (ptype == marker::rsa)
 			return dh_params != nullptr && dh_params->pub != nullptr;
@@ -275,11 +262,11 @@ public:
 
 	PKEYbox *add_dh_pubkey(const EVP_MD *md, std::string &pem);
 
-	PKEYbox *gen_dh_key(const std::string &hash);
+	PKEYbox *gen_kex_key(const std::string &hash, const std::string & = "");
 
-	PKEYbox *gen_dh_key(const EVP_MD *md);
+	int gen_dh_key(const EVP_MD *md, std::string&, std::string&, std::string&);
 
-	PKEYbox *gen_ecdh_key(const EVP_MD *md);
+	PKEYbox *gen_kex_key(const EVP_MD *md, const std::string & = "");
 
 	PKEYbox *find_dh_key(const std::string &hex);
 

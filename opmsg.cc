@@ -74,7 +74,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.52 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.55 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -426,8 +426,8 @@ int do_encrypt(const string &dst_id)
 
 	// Add new (EC)DH keys for upcoming Kex in future
 	vector<PKEYbox *> newdh;
-	for (int i = 0; src_p->can_gen_dh() && i < config::new_dh_keys; ++i) {
-		PKEYbox *pbox = src_p->gen_dh_key(config::khash);
+	for (int i = 0; src_p->can_kex_gen() && i < config::new_dh_keys; ++i) {
+		PKEYbox *pbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
 		if (pbox) {
 			newdh.push_back(pbox);
 			msg.ecdh_keys.push_back(pbox->pub_pem);
