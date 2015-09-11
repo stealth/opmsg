@@ -29,6 +29,11 @@ Features:
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
 
+_opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto libraries.
+Building against BoringSSL is not recommended due to missing blowfish and ripemd algorithms.
+In the BoringSSL-case _opmsg_ also re-implements certain missing functions from the OpenSSL project,
+using source code from the OpenSSL project. Please check `openssl.copyright` file in this case.
+
 Build
 -----
 
