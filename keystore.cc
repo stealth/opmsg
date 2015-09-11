@@ -983,6 +983,9 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	char *ptr = nullptr;
 	int ecode = 0;
 
+	if (RAND_load_file("/dev/urandom", 256) != 256)
+		RAND_load_file("/dev/random", 8);
+
 	if (!dh_params)
 		return build_error("gen_dh_key: Invalid persona. No DH params for " + id, -1);
 
