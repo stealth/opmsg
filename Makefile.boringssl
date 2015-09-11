@@ -37,7 +37,7 @@ opmsg.o: opmsg.cc
 marker.o: marker.cc marker.h
 	$(CXX) $(CXXFLAGS) -c $<
 
-boringssl.o: missing.cc missing.h
+missing.o: missing.cc missing.h
 	$(CXX) $(CXXFLAGS) -c $<
 
 keystore.o: keystore.cc keystore.h
