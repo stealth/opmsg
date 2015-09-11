@@ -39,6 +39,8 @@ extern "C" {
 #include <openssl/rsa.h>
 }
 
+#include "missing.h"
+
 namespace opmsg {
 
 using namespace std;

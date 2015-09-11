@@ -59,7 +59,7 @@ std::string my_id = "";
 
 
 
-#ifdef NID_brainpoolP512t1
+#if defined NID_brainpoolP512t1 && !defined HAVE_BORINGSSL
 int curve_nid = NID_brainpoolP320r1;
 std::string curve = "brainpoolP320r1";
 #else

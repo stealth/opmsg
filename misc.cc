@@ -28,6 +28,9 @@
 extern "C" {
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#ifdef HAVE_BORINGSSL
+#include <openssl/cipher.h>
+#endif
 }
 
 
@@ -69,20 +72,19 @@ const EVP_CIPHER *algo2cipher(const string &s)
 
 	if (s == "aes128cbc")
 		cipher = EVP_aes_128_cbc();
-	else if (s == "aes128cfb")
-		cipher = EVP_aes_128_cfb();
 	else if (s == "aes128gcm")
 		cipher = EVP_aes_128_gcm();
 	else if (s == "aes128ctr")
 		cipher = EVP_aes_128_ctr();
 	else if (s == "aes256cbc")
 		cipher = EVP_aes_256_cbc();
-	else if (s == "aes256cfb")
-		cipher = EVP_aes_256_cfb();
 	else if (s == "aes256gcm")
 		cipher = EVP_aes_256_gcm();
 	else if (s == "aes256ctr")
 		cipher = EVP_aes_256_ctr();
+
+// BoringSSL not implementing a lot of modes!!!
+#ifndef HAVE_BORINGSSL
 	else if (s == "bfcbc")
 		cipher = EVP_bf_cbc();
 	else if (s == "bfcfb")
@@ -91,6 +93,11 @@ const EVP_CIPHER *algo2cipher(const string &s)
 		cipher = EVP_cast5_cbc();
 	else if (s == "cast5cfb")
 		cipher = EVP_cast5_cfb();
+	else if (s == "aes128cfb")
+		cipher = EVP_aes_128_cfb();
+	else if (s == "aes256cfb")
+		cipher = EVP_aes_256_cfb();
+#endif
 
 	return cipher;
 }
@@ -104,9 +111,10 @@ const EVP_MD *algo2md(const string &s)
 		md = EVP_sha256();
 	else if (s == "sha384")
 		md = EVP_sha384();
+#ifndef HAVE_BORINGSSL
 	else if (s == "ripemd160")
 		md = EVP_ripemd160();
-
+#endif
 	return md;
 }
 
