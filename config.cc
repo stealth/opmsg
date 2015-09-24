@@ -131,7 +131,7 @@ int parse_config(const string &cfgbase)
 				config::dh_plen = 2048;
 		} else if (sline.find("new_dh_keys=") == 0) {
 			config::new_dh_keys = strtoul(sline.substr(12).c_str(), nullptr, 0);
-			if (config::new_dh_keys < 0 || config::new_dh_keys > 100)
+			if (config::new_dh_keys < 0 || config::new_dh_keys > 10)	// max_new_dh_keys: 10
 				config::new_dh_keys = 3;
 		} else if (sline == "rsa_override")
 			config::native_crypt = 1;
