@@ -24,6 +24,7 @@
 #include <string>
 #include <cstring>
 #include <cstdlib>
+#include "numbers.h"
 
 extern "C" {
 #include <openssl/ec.h>
@@ -34,11 +35,9 @@ namespace opmsg {
 
 namespace config {
 
-int dh_plen = 2048;
-
-int rsa_len = 4096;
-
-int new_dh_keys = 3;
+int dh_plen = DEFAULT_DH_PLEN;
+int rsa_len = DEFAULT_RSA_LEN;
+int new_dh_keys = DEFAULT_NEW_DH_KEYS;
 
 int native_crypt = 0;
 
@@ -123,16 +122,16 @@ int parse_config(const string &cfgbase)
 			config::peer_isolation = strtoul(sline.substr(15).c_str(), nullptr, 0);
 		else if (sline.find("rsa_len=") == 0) {
 			config::rsa_len = strtoul(sline.substr(8).c_str(), nullptr, 0);
-			if (config::rsa_len < 1024 || config::rsa_len > 16000)
-				config::rsa_len = 4096;
+			if (config::rsa_len < MIN_RSA_LEN || config::rsa_len > MAX_RSA_LEN)
+				config::rsa_len = DEFAULT_RSA_LEN;
 		} else if (sline.find("dh_plen=") == 0) {
 			config::dh_plen = strtoul(sline.substr(8).c_str(), nullptr, 0);
-			if (config::dh_plen < 1024 || config::dh_plen > 16000)
-				config::dh_plen = 2048;
+			if (config::dh_plen < MIN_DH_PLEN || config::dh_plen > MAX_DH_PLEN)
+				config::dh_plen = DEFAULT_DH_PLEN;
 		} else if (sline.find("new_dh_keys=") == 0) {
 			config::new_dh_keys = strtoul(sline.substr(12).c_str(), nullptr, 0);
-			if (config::new_dh_keys < 0 || config::new_dh_keys > 10)	// max_new_dh_keys: 10
-				config::new_dh_keys = 3;
+			if (config::new_dh_keys < MIN_NEW_DH_KEYS || config::new_dh_keys > MAX_NEW_DH_KEYS)
+				config::new_dh_keys = DEFAULT_NEW_DH_KEYS;
 		} else if (sline == "rsa_override")
 			config::native_crypt = 1;
 		else if (sline == "native_crypt")

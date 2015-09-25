@@ -1076,9 +1076,14 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 	} else
 		return build_error("add_dh_pubkey: Unknown key type.", nullptr);
 
+	string hexdir = cfgbase + "/" + id + "/" + hex;
+
 	// some remote persona tries to import a key twice?
-	if (keys.count(hex) > 0)
-		return keys[hex];
+	// stat() to check if an empty key directory exists. That'd mean that
+	// key was already imported and used once. Do not reimport. (Later rename()
+	// would not fail on empty target dirs.)
+	if (keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
+		return build_error("add_dh_pubkey: Key already exist(ed).", nullptr);
 
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
@@ -1094,10 +1099,7 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 		return build_error("add_dh_key::fwrite:", nullptr);
 	f.reset();
 
-	string hexdir = cfgbase + "/" + id + "/" + hex;
-
-	// apparently the key was already imported once, so dont do it again
-	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
+	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		unlink(dhfile.c_str());
 		rmdir(tmpdir.c_str());
 		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, nullptr);

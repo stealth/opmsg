@@ -26,6 +26,7 @@
 #include <cerrno>
 #include <cstring>
 #include "keystore.h"
+#include "numbers.h"
 
 extern "C" {
 #include <openssl/err.h>
@@ -86,7 +87,7 @@ public:
 	std::vector<std::string> ecdh_keys;	// either DH or ECDH keys
 
 	message(unsigned int vers, const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
-		: version(vers), max_new_dh_keys(10), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
+		: version(vers), max_new_dh_keys(MAX_NEW_DH_KEYS), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
 	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""), peer_isolation(0)
 	{
 	}

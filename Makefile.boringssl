@@ -49,10 +49,10 @@ base64.o: base64.cc base64.h
 misc.o: misc.cc misc.h
 	$(CXX) $(CXXFLAGS) -c $<
 
-config.o: config.cc config.h
+config.o: config.cc config.h numbers.h
 	$(CXX) $(CXXFLAGS) -c $<
 
-message.o: message.cc message.h
+message.o: message.cc message.h numbers.h
 	$(CXX) $(CXXFLAGS) -c $<
 
 deleters.o: deleters.cc
