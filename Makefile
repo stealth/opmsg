@@ -2,6 +2,8 @@ CXX=c++
 DEFS=
 INC=
 
+#recommended if supported by your GCC
+#DEFS+=-fsanitize=address
 
 # Cygwin was reported to require this:
 #DEFS+=-U__STRICT_ANSI__

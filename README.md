@@ -185,17 +185,6 @@ any further switches for encryption or alike. EC personas use the brainpool curv
 libcrypto is outdated, but its recommended to use the brainpool curves which
 dont keep any secrets about how their group parameters were selected.
 
-**Note:** *opmsg*s printing versions earlier than `opmsg: version=1.2` have had a weakness
-that left the personas RSA's (public) **e** value integrity-unprotected during `--import`.
-This could lallow attackers to mount MiM attacks that
-downgrade **e** to 1. Its recommended to update to the newest version, which
-correctly hashes the whole RSA pubkey and detects such tampering during `--import`. It is unlikely that such
-an attack goes unnoticed, as wrong message signatures would most likely be detected
-during operation, but if in doubt you can use the `rsa-check` script to check
-your local keystore to not contain any Exponent values of 1. In either case, update
-your *opmsg* to be on the safe side. As a bonus you would also get the new and
-shiny *aes-gcm* and *aes-ctr* cipher modes!
-
 
 Persona linking - if required
 -----------------------------

@@ -20,6 +20,7 @@
 
 #include <string>
 #include <cstring>
+#include <limits>
 
 namespace opmsg {
 
@@ -34,13 +35,23 @@ using namespace std;
  */
 string &b64_decode(const string &src, string &dst)
 {
-	unsigned int bit_offset, byte_offset, idx, i = 0, n = 0, j = 0;
+	unsigned int bit_offset = 0, byte_offset = 0, idx = 0, i = 0, n = 0, j = 0;
 	const char *p = NULL;
 
 	dst = "";
 	string::size_type srclen = src.size();
-	dst.reserve(srclen);
-	dst.resize(srclen);
+	if (srclen >= numeric_limits<unsigned int>::max() - 10)
+		return dst;
+
+	// some extra space for 'unaligned encodings'
+	dst.reserve(srclen + 10);
+	dst.resize(srclen + 10);
+	// double-check for safety
+	if (dst.size() != srclen + 10) {
+		dst = "";
+		return dst;
+	}
+
 	while (j < srclen && (p = strchr(b64, src[j]))) {
 		idx = (int)(p - b64);
 		byte_offset = (i*6)/8;
@@ -58,8 +69,9 @@ string &b64_decode(const string &src, string &dst)
 		j++; i++;
 	}
 
-	if (src[j] == '=')
-		n -= 1;
+	if (src[j] == '=' && n > 0)
+		--n;
+
 	dst.resize(n);
 	return dst;
 }
@@ -71,6 +83,9 @@ string &b64_encode(const string &src, string &dst)
 	int char_count = 0, i = 0;
 
 	dst = "";
+	if (src.size() >= numeric_limits<unsigned int>::max()/2)
+		return dst;
+
 	dst.reserve(src.size() + src.size()/3 + 10);
 	string::size_type len = src.size();
 	while (len--) {
@@ -110,6 +125,9 @@ string &b64_encode(const char *src, size_t srclen, string &dst)
 	int char_count = 0, i = 0;
 
 	dst = "";
+	if (srclen >= numeric_limits<unsigned int>::max()/2)
+		return dst;
+
 	dst.reserve(srclen + srclen/3 + 10);
 	while (srclen--) {
 		unsigned int c = (unsigned char)src[i++];
@@ -144,12 +162,19 @@ string &b64_encode(const char *src, size_t srclen, string &dst)
 
 string &b64_decode(const char *src, size_t srclen, string &dst)
 {
-	unsigned int bit_offset, byte_offset, idx, i = 0, n = 0, j = 0;
+	unsigned int bit_offset = 0, byte_offset = 0, idx, i = 0, n = 0, j = 0;
 	const char *p = NULL;
 
 	dst = "";
-	dst.reserve(srclen);
-	dst.resize(srclen);
+	if (srclen >= numeric_limits<unsigned int>::max() - 10)
+		return dst;
+	dst.reserve(srclen + 10);
+	dst.resize(srclen + 10);
+	if (dst.size() != srclen + 10) {
+		dst = "";
+		return dst;
+	}
+
 	while (j < srclen && (p = strchr(b64, src[j]))) {
 		idx = (int)(p - b64);
 		byte_offset = (i*6)/8;
@@ -167,8 +192,9 @@ string &b64_decode(const char *src, size_t srclen, string &dst)
 		j++; i++;
 	}
 
-	if (src[j] == '=')
-		n -= 1;
+	if (src[j] == '=' && n > 0)
+		--n;
+
 	dst.resize(n);
 	return dst;
 }
