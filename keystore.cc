@@ -21,6 +21,7 @@
 #include <string>
 #include <cstring>
 #include <memory>
+#include <algorithm>
 #include <fcntl.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -670,7 +671,9 @@ int persona::load(const std::string &dh_hex)
 	if (f.get()) {
 		char s[512];
 		memset(s, 0, sizeof(s));
+		rlockf(f.get());
 		fgets(s, sizeof(s) - 1, f.get());
+		unlockf(f.get());
 		size_t slen = strlen(s);
 		if (slen > 0) {
 			if (s[slen - 1] == '\n')
@@ -685,13 +688,40 @@ int persona::load(const std::string &dh_hex)
 	if (f.get()) {
 		char s[512];
 		memset(s, 0, sizeof(s));
+		rlockf(f.get());
 		fgets(s, sizeof(s) - 1, f.get());
+		unlockf(f.get());
 		size_t slen = strlen(s);
 		if (slen > 0) {
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
 		link_src = string(s);
+	}
+
+	// load list of hashes of keys that have been imported once
+	file = dir + "/imported";
+	f.reset(fopen(file.c_str(), "r"));
+	if (f.get()) {
+		char s[512];
+		size_t slen = 0;
+		memset(s, 0, sizeof(s));
+		string line = "";
+		rlockf(f.get());
+		while (fgets(s, sizeof(s) - 1, f.get()) != nullptr) {
+			slen = strlen(s);
+			if (slen < 1 || s[0] == '#')
+				continue;
+			line = s;
+			line.erase(remove(line.begin(), line.end(), '\n'), line.end());
+			string::size_type idx = 0;
+			if ((idx = line.find(":")) != string::npos) {
+				string h = line.substr(0, idx);
+				if (is_hex_hash(h))
+					imported[h] = 1;	// timestamp not needed yet
+			}
+		}
+		unlockf(f.get());
 	}
 
 	// load EC/RSA keys
@@ -794,12 +824,15 @@ DHbox *persona::new_dh_params(const string &pem)
 		close(fd);
 		return build_error("new_dh_params::fdopen:", nullptr);
 	}
+	wlockf(f.get());
 	if (fwrite(pem.c_str(), pem.size(), 1, f.get()) != 1)
 		return build_error("new_dh_params::fwrite:", nullptr);;
 	rewind(f.get());
 
 	if (!PEM_read_DHparams(f.get(), &dh, nullptr, nullptr))
 		return build_error("new_dh_params::PEM_read_DHparams: Error reading DH params for " + id, nullptr);
+
+	f.reset();	// calls unlock
 
 	if (dh_params)
 		delete dh_params;
@@ -849,6 +882,7 @@ DHbox *persona::new_dh_params()
 		close(fd);
 		return build_error("new_dh_params::fdopen:", nullptr);
 	}
+	wlockf(f.get());
 	if (PEM_write_DHparams(f.get(), dh.get()) != 1)
 		return build_error("new_dh_params::PEM_write_DHparams: Error writing DH params for " + id, nullptr);
 	rewind(f.get());
@@ -856,6 +890,8 @@ DHbox *persona::new_dh_params()
 	char buf[8192];
 	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 		return build_error("new_dh_params::fread: Error generating DH params for " + id, nullptr);
+
+	f.reset();	// calls unlock
 
 	if (dh_params)
 		delete dh_params;
@@ -1076,12 +1112,18 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 	} else
 		return build_error("add_dh_pubkey: Unknown key type.", nullptr);
 
+	// already imported once upon a time?
+	if (imported.count(hex) > 0)
+		return build_error("add_dh_pubkey: Key already exist(ed).", nullptr);
+
 	string hexdir = cfgbase + "/" + id + "/" + hex;
 
 	// some remote persona tries to import a key twice?
 	// stat() to check if an empty key directory exists. That'd mean that
 	// key was already imported and used once. Do not reimport. (Later rename()
 	// would not fail on empty target dirs.)
+	// Needed since older opmsg versions leave empty hexdir instead of recording
+	// it in "imported" file
 	if (keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
 		return build_error("add_dh_pubkey: Key already exist(ed).", nullptr);
 
@@ -1104,6 +1146,16 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 		rmdir(tmpdir.c_str());
 		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, nullptr);
 	}
+
+	// record this key id as imported
+	imported[hex] = 1;
+	string imfile = cfgbase + "/" + id + "/imported";
+	f.reset(fopen(imfile.c_str(), "a"));
+	if (f.get()) {
+		wlockf(f.get());
+		fprintf(f.get(), "%s:1\n", hex.c_str());
+	}
+	f.reset();	// calls unlock
 
 	PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), nullptr);
 	if (!pbox)
@@ -1203,8 +1255,10 @@ int persona::link(const string &hex)
 
 	int fd = open(file.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600);
 	if (fd >= 0) {
+		wlockf(fd);
 		write(fd, hex.c_str(), hex.size());
 		write(fd, "\n", 1);
+		unlockf(fd);
 		close(fd);
 	} else
 		return build_error("link: ", -1);

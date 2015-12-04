@@ -22,6 +22,8 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
+#include <fcntl.h>
 #include <sstream>
 
 
@@ -172,6 +174,57 @@ bool is_valid_halgo(const string &s)
 
 	return m.count(s) > 0;
 }
+
+
+void rlockf(int fd)
+{
+	struct flock fl;
+	memset(&fl, 0, sizeof(fl));
+	fl.l_type = F_RDLCK;
+	fl.l_whence = SEEK_SET;
+	fcntl(fd, F_SETLKW, &fl);
+}
+
+
+// fcntl() files locks are not really to be used with FILE
+// (buffered) operations, but we indeed dont lock records but
+// whole files and close them after read/write operation anyway.
+void rlockf(FILE *f)
+{
+	rlockf(fileno(f));
+}
+
+
+void unlockf(int fd)
+{
+	struct flock fl;
+	memset(&fl, 0, sizeof(fl));
+	fl.l_type = F_UNLCK;
+	fl.l_whence = SEEK_SET;
+	fcntl(fd, F_SETLKW, &fl);
+}
+
+void unlockf(FILE *f)
+{
+	unlockf(fileno(f));
+}
+
+
+void wlockf(int fd)
+{
+	struct flock fl;
+	memset(&fl, 0, sizeof(fl));
+	fl.l_type = F_WRLCK;
+	fl.l_whence = SEEK_SET;
+	fcntl(fd, F_SETLKW, &fl);
+}
+
+
+void wlockf(FILE *f)
+{
+	wlockf(fileno(f));
+}
+
 
 string build_error(const string &msg)
 {

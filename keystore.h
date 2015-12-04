@@ -147,7 +147,12 @@ public:
 class persona {
 
 	std::string id, name, link_src, ptype;
+
+	// The (EC)DH 'session' keys this persona holds
 	std::map<std::string, PKEYbox *> keys;
+
+	// List of hashes of all imported keys so far
+	std::map<std::string, unsigned int> imported;
 
 	PKEYbox *pkey;
 	DHbox *dh_params;

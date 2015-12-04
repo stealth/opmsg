@@ -23,6 +23,7 @@
 
 #include <string>
 #include <sstream>
+#include <cstdio>
 
 extern "C" {
 #include <openssl/evp.h>
@@ -47,6 +48,18 @@ const EVP_CIPHER *algo2cipher(const std::string &);
 const EVP_MD *algo2md(const std::string &);
 
 std::string build_error(const std::string &msg);
+
+void rlockf(FILE *);
+
+void rlockf(int);
+
+void wlockf(FILE *);
+
+void wlockf(int);
+
+void unlockf(FILE *);
+
+void unlockf(int);
 
 extern const std::string prefix;
 

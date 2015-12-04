@@ -74,7 +74,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.62 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.63 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -461,12 +461,9 @@ int do_encrypt(const string &dst_id)
 	// peer personas store to avoid using them twice
 	if (kex_id != marker::rsa_kex_id && kex_id != marker::ec_kex_id) {
 		dst_p->del_dh_pub(kex_id);
-
-		// dont delete the id itself, it would erase underlying
-		// key directory. But we want to keep it so that no DH keys
-		// are re-used, once old opmsg are decrypted and old "new" DH keys
-		// are tried to be imported again.
-		//dst_p->del_dh_id(kex_id);
+		// hexid directory can be delted too, imported keys are tracked
+		// via 'imported' file per persona
+		dst_p->del_dh_id(kex_id);
 	}
 
 	return 0;
@@ -832,6 +829,8 @@ int main(int argc, char **argv)
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
 	string detached_file = "", dst_id = "", verify_file = "", name = "", link_src = "";
+
+	umask(077);
 
 	if (getenv("HOME")) {
 		config::cfgbase = getenv("HOME");
