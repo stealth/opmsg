@@ -461,9 +461,11 @@ int do_encrypt(const string &dst_id)
 	// peer personas store to avoid using them twice
 	if (kex_id != marker::rsa_kex_id && kex_id != marker::ec_kex_id) {
 		dst_p->del_dh_pub(kex_id);
-		// hexid directory can be delted too, imported keys are tracked
-		// via 'imported' file per persona
-		dst_p->del_dh_id(kex_id);
+		// hexid directory can be delted too, newly imported keys are tracked
+		// via 'imported' file per persona. If we dont track it in "imported"
+		// files, leave empty dir in place
+		if (dst_p->has_imported(kex_id))
+			dst_p->del_dh_id(kex_id);
 	}
 
 	return 0;

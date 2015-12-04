@@ -281,6 +281,11 @@ public:
 
 	int del_dh_priv(const std::string &hex);
 
+	bool has_imported(const std::string &hex)
+	{
+		return imported.count(hex) > 0;
+	}
+
 	void used_key(const std::string &hex, bool);
 
 	int load(const std::string &hex = "");
