@@ -18,13 +18,13 @@ Features:
 * fully compliant to existing SMTP/IMAP/POP etc. standards;
   no need to touch any mail daemon/client/agent code
 * signing messages is mandatory
+* OTR-like deniable signatures if demanded
 * easy creation and throw-away of ids
 * support for 1:1 key bindings to auto-select source key per destination
 * adds the possibility to (re-)route messages different
   from mail address to defeat meta data collection
 * configurable well-established hash and crypto algorithms
   and key lengths (RSA, DH, EC, AES)
-* deniable messages (see persona self-linking)
 * straight forward and open key storage, basically also managable via
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
@@ -55,14 +55,14 @@ $ make
 $ cp opmsg /usr/local/bin/
 $ opmsg
 
-opmsg: version=1.5 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.64 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 
 Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         [--verify file] <--persona ID> [--import] [--list] [--listpgp]
         [--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]
         [--phash name [--name name] [--in infile] [--out outfile]
-        [--link target id] [--burn]
+        [--link target id] [--deniable] [--burn]
 
         --confdir,      -c      (must come first) defaults to ~/.opmsg
         --native,       -R      EC/RSA override (dont use existing (EC)DH keys)
@@ -79,6 +79,7 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         --split                 split view of hex ids
         --newp,         -N      create new RSA persona (should add --name)
         --newecp                create new EC persona (should add --name)
+        --deniable              when create/import personas, do it deniable
         --link                  link (your) --persona as default src to this
                                 target id
         --newdhp                create new DHparams for persona (rarely needed)
@@ -189,12 +190,12 @@ dont keep any secrets about how their group parameters were selected.
 Persona linking - if required
 -----------------------------
 
-Although this step is not strictly necessary, it is recommended. As personas are easily
+Although this step is not strictly necessary, **it is recommended**. As personas are easily
 created, you can (should) create a dedicated persona for each of your "projects" or
-contacts. That is, if you have 7350 communication partners/peers, you should have
-created 7350 personas; one EC/RSA key for each of them. To handle that easily with your
+contacts. That is, if you have 7 communication partners/peers, you should have
+created 7 personas; one EC/RSA key for each of them. To handle that easily with your
 mailer (see later for mutt integration), you should add a proper `--name`, describing your
-id. Additionally, you should `--link` your source persona (each of the 7350 you created)
+id. Additionally, you should `--link` your source persona (each of the 7 you created)
 to the particular destination persona that you wish to communicate with using this source id:
 
 ```
@@ -224,34 +225,35 @@ just contain pairs of communication partners. No clusters, just islands
 of 1:1 mappings.
 
 
-Persona self-linking
---------------------
+Deniable personas
+-----------------
 
 There may be valid scenarios where you dont want your communication peer to have a way to proof
 that you wrote a certain message. Since op messages are always signed with your persona
-key, he could proof that you were expressing illegal thoughts. So you want deniable messages
+key, peer could proof that you were expressing illegal thoughts. So you want deniable messages
 that are sill integrity protected. The OTR protocol is handling this by sharing the public as
 well as the private key for a dedicated communication session between both peers.
 
 _opmsg_ allows to do the same. It requires an additional communication step with a peer
-that you already imported once and which you suspect to forward your mails that
-you sent him to he FBI.
+that you already imported once and which you suspect to do such back stabbing.
+(Generally speaking its wise to assume that case.)
 
-It is recommended to use EC personas for that, as this step requires to:
+It is recommended to use EC personas for that purpose, as its faster. Just add `--deniable`
+switch on the commandline when creating or importing this deniable persona as well
+as a `--name` that reflects deniability for you.
+This will print or import the private key half of the persona and link it to itself.
 
-* one peer to generate a dedicated _new_ EC persona and also send
-  along the private half `~/.opmsg/$NEW_ID/ec.priv.pem` over the already existing secure (_opmsg_) channel
-* the other one to import and check this EC persona as usual and to copy the received private half to
-  `~/.opmsg/$NEW_ID/ec.priv.pem`
-* both peers link this new dedicated EC persona to itself:
-  `opmsg --link $NEW_ID --persona $NEW_ID`
-
-Then both peers share the public and secret part of the persona whose id is `$NEW_ID`.
-As this persona is linked to itself, whenever you send something to the peer the
+As this new persona is linked to itself, whenever you send something to the peer the
 signing key is shared with _that_ peer. You can always deny that you sent this message
 as your peer could also have signed it (`src-id` and `dst-id` inside the message are the same).
+**Only exchange deniable persona keys across an existing secure (encrypted) channel as it
+contains private keying material.
 Do not share any key material of this dedicated new EC persona to anyone else. Its only for
-this dedicated communication peer.
+this dedicated, deniable, communication peer.**
+
+Once a deniable peer is established, you may use it as often and as long as you wish
+and as within normal operation.
+Deniable op messages are integrity protected and feature all crypto benefits.
 
 Of course for this to work you also want to have fully encrypted your disk to leave no
 forensic artifacts and dont want to cite your peer in reply-messages as this proofs
@@ -387,7 +389,7 @@ Supported ciphers
 ```
 $ opmsg -C inv -D
 
-opmsg: version=1.2 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.64 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
 
 opmsg: Invalid crypto algorithm. Valid crypto algorithms are:
 
