@@ -32,6 +32,9 @@ string ec_dh_end = "-----END PUBLIC KEY-----\n";
 string pub_begin = "-----BEGIN PUBLIC KEY-----\n";
 string pub_end = "-----END PUBLIC KEY-----";		// note missing trailing \n
 
+string priv_begin = "-----BEGIN PRIVATE KEY-----\n";
+string priv_end = "-----END PRIVATE KEY-----\n";
+
 string sig_begin = "-----BEGIN SIGNATURE-----\n";
 string sig_end = "-----END SIGNATURE-----\n";
 

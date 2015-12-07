@@ -33,6 +33,9 @@ extern std::string ec_dh_end;
 extern std::string pub_begin;
 extern std::string pub_end;
 
+extern std::string priv_begin;
+extern std::string priv_end;
+
 extern std::string sig_begin;
 extern std::string sig_end;
 

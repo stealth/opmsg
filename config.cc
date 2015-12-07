@@ -41,6 +41,9 @@ int new_dh_keys = DEFAULT_NEW_DH_KEYS;
 
 int native_crypt = 0;
 
+// when creating or importing personas, do it deniable
+int deniable = 0;
+
 unsigned int version = 1;
 unsigned int peer_isolation = 0;
 

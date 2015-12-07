@@ -56,7 +56,8 @@ enum {
 	LINK			= 4,
 	BURN			= 5,
 	NEWECP			= 6,
-	FREEHUGS		= 7,
+	DENIABLE		= 7,
+	FREEHUGS		= 8,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -74,7 +75,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.63 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.64 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -104,7 +105,7 @@ void usage(const char *p)
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
 	    <<"\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
-	    <<"\t[--link target id] [--burn]"<<endl<<endl
+	    <<"\t[--link target id] [--deniable] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
@@ -120,6 +121,7 @@ void usage(const char *p)
 	    <<"\t--split\t\t\tsplit view of hex ids"<<endl
 	    <<"\t--newp,\t\t-N\tcreate new RSA persona (should add --name)"<<endl
 	    <<"\t--newecp\t\tcreate new EC persona (should add --name)"<<endl
+	    <<"\t--deniable\t\twhen create/import personas, do it deniable"<<endl
 	    <<"\t--link\t\t\tlink (your) --persona as default src to this"<<endl
 	    <<"\t\t\t\ttarget id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
@@ -588,13 +590,22 @@ int do_newpersona(const string &name, const string &type)
 		return -1;
 	}
 	estr<<"\n\n"<<prefix<<"Successfully generated persona with id\n"<<prefix<<idformat(p->get_id())<<endl;
+	if (config::deniable) {
+		if (p->link(p->get_id()) < 0)
+			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl; eflush();
+		estr<<prefix<<"You created a deniable persona.\n"<<prefix<<"SEND BOTH KEYS ONLY ACROSS EXISTING _SECURE_ OPMSG CHANNEL.\n";
+	}
+
 	estr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
 	estr<<prefix<<"opmsg --import --phash "<<config::phash;
 	if (name.size() > 0)
 		estr<<" --name "<<name;
 	estr<<"\n\n";
 	eflush();
-	ostr<<pub<<endl;
+	ostr<<pub;
+	if (config::deniable)
+		ostr<<priv;
+	ostr<<endl;
 	oflush();
 	estr<<prefix<<"Check (by phone, otr, twitter, id-selfie etc.) that above id matches\n";
 	estr<<prefix<<"the import message from your peer.\n";
@@ -698,24 +709,57 @@ int do_pgplist(const string &name)
 }
 
 
+static int split_deniable_keys(string &pub, string &priv)
+{
+	string::size_type priv_b = string::npos;
+	string::size_type priv_e = string::npos;
+
+	if ((priv_b = pub.find(marker::priv_begin)) == string::npos)
+		return 0;
+	if ((priv_e = pub.find(marker::priv_end, priv_b)) == string::npos)
+		return -1;
+
+	priv = pub.substr(priv_b, priv_e - priv_b + marker::priv_end.size());
+	pub.erase(priv_b, priv_e - priv_b + marker::priv_end.size());
+	return 1;
+}
+
+
 int do_import(const string &name)
 {
 	if (config::infile == "/dev/stdin")
 		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
 
-	string pub = "";
+	string pub = "", priv = "";
 	if (read_msg(config::infile, pub) < 0) {
 		estr<<prefix<<"ERROR: Importing persona: "<<strerror(errno)<<endl; eflush();
+		return -1;
+	}
+
+	// if deniable persona, split off private key thats appended
+	if (split_deniable_keys(pub, priv) < 0) {
+		estr<<prefix<<"ERROR: Junk at end of public key!\n"; eflush();
+		return -1;
+	}
+	if (!config::deniable && priv.size() > 0) {
+		estr<<prefix<<"ERROR: Found appended private key, but no --deniable switch!\n"; eflush();
 		return -1;
 	}
 
 	keystore ks(config::phash, config::cfgbase);
 
 	persona *p = nullptr;
-	if (!(p = ks.add_persona(name, pub, "", ""))) {
+	if (!(p = ks.add_persona(name, pub, priv, ""))) {
 		estr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl; eflush();
 		return -1;
 	}
+	if (config::deniable) {
+		if (p->link(p->get_id()) < 0) {
+			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl; eflush();
+			return -1;
+		}
+	}
+
 	estr<<prefix<<"Successfully imported pesona with id "<<idformat(p->get_id())<<".\n";
 	estr<<prefix<<"Check with your peer (phone, otr, twitter, selfie, ...) whether above id matches\n";
 	estr<<prefix<<"with the id that your peer got printed when generating that persona.\n";
@@ -819,6 +863,7 @@ int main(int argc, char **argv)
 	        {"newp", no_argument, nullptr, 'N'},
 		{"newecp", no_argument, nullptr, NEWECP},
 		{"newdhp", no_argument, nullptr, NEWDHP},
+		{"deniable", no_argument, nullptr, DENIABLE},
 	        {"calgo", required_argument, nullptr, 'C'},
 	        {"phash", required_argument, nullptr, 'p'},
 	        {"name", required_argument, nullptr, 'n'},
@@ -954,6 +999,9 @@ int main(int argc, char **argv)
 			break;
 		case BURN:
 			config::burn = 1;
+			break;
+		case DENIABLE:
+			config::deniable = 1;
 			break;
 		case FREEHUGS:
 			cmode = CMODE_FREEHUGS;
