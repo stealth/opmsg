@@ -21,6 +21,7 @@
 #include <iostream>
 #include <sstream>
 #include <memory>
+#include <vector>
 #include <string>
 #include <cstdio>
 #include <cstring>
@@ -75,7 +76,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.64 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.65 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -173,13 +174,16 @@ int read_msg(const string &path, string &msg)
 }
 
 
-int write_msg(const string &path, const string &msg)
+int write_msg(const string &path, const string &msg, int append)
 {
 	int fd = 1;
 	bool was_opened = 0;
 
 	if (path != "/dev/stdout") {
-		if ((fd = open(path.c_str(), O_WRONLY|O_CREAT|O_EXCL, 0600)) < 0)
+		int flags = O_WRONLY|O_CREAT|O_EXCL;
+		if (append)
+			flags = O_WRONLY|O_CREAT|O_APPEND;
+		if ((fd = open(path.c_str(), flags, 0600)) < 0)
 			return -1;
 		was_opened = 1;
 	}
@@ -301,11 +305,11 @@ int do_sign()
 	else
 		msg.kex_id(marker::ec_kex_id);
 
-	if (msg.encrypt(hexhash, my_p, my_p) < 0) {
+	if (msg.encrypt(hexhash, my_p, my_p) != 1) {
 		estr<<prefix<<"ERROR: Signing file: "<<msg.why()<<endl; eflush();
 		return -1;
 	}
-	if (write_msg(config::outfile, hexhash) < 0) {
+	if (write_msg(config::outfile, hexhash, 0) < 0) {
 		estr<<prefix<<"ERROR: Writing outfile: "<<strerror(errno)<<endl; eflush();
 		return -1;
 	}
@@ -313,7 +317,7 @@ int do_sign()
 }
 
 
-int do_encrypt(const string &dst_id)
+int do_encrypt(const string &dst_id, const string &s, int may_append)
 {
 	int r1 = 0, r2 = 0;
 	bool linked_to_myself = 0;
@@ -321,7 +325,7 @@ int do_encrypt(const string &dst_id)
 	unique_ptr<persona> dst_persona(nullptr), src_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 	persona *dst_p = nullptr, *src_p = nullptr;
-	string text = "", kex_id = marker::rsa_kex_id;
+	string kex_id = marker::rsa_kex_id, text = s;
 
 	if (!ks.get()) {
 		estr<<prefix<<"ERROR: OOM\n"; eflush();
@@ -393,11 +397,6 @@ int do_encrypt(const string &dst_id)
 		return -1;
 	}
 
-	if (read_msg(config::infile, text) < 0) {
-		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
-		return -1;
-	}
-
 	message msg(config::version, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 	msg.src_id(src_p->get_id());
 	msg.dst_id(dst_p->get_id());
@@ -437,19 +436,19 @@ int do_encrypt(const string &dst_id)
 	}
 
 	r1 = msg.encrypt(text, src_p, dst_p);
-	if (r1 >= 0)
-		r2 = write_msg(config::outfile, text);
+	if (r1 == 1)
+		r2 = write_msg(config::outfile, text, may_append);
 
 	// in case of errors, the message cant get sent out. So, erase generated DH
 	// keys from keystore
-	if (r1 < 0 || r2 < 0) {
+	if (r1 < 1 || r2 < 0) {
 		for (auto i = newdh.begin(); i != newdh.end(); ++i) {
 			src_p->del_dh_pub((*i)->hex);
 			src_p->del_dh_priv((*i)->hex);
 			src_p->del_dh_id((*i)->hex);
 		}
 
-		if (r1 < 0) {
+		if (r1 < 1) {
 			estr<<prefix<<"ERROR: "<<msg.why()<<endl;
 			eflush();
 		} else {
@@ -477,6 +476,7 @@ int do_encrypt(const string &dst_id)
 int do_decrypt()
 {
 	string ctext = "";
+	int r = 0, found_one = 0;
 
 	if (read_msg(config::infile, ctext) < 0) {
 		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
@@ -484,53 +484,72 @@ int do_decrypt()
 	}
 
 	string::size_type pos = 0;
-	if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
-		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
-		return -1;
+
+	// Might be multiple opmsg appended in a row (Cc mail), try to find
+	// one thats for us
+	for (;;) {
+
+		// Only an error if no opmg found so far
+		if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
+			if (!found_one) {
+				estr<<prefix<<"ERROR: Missing persona/kex keys or not in OPMSG format.\n"; eflush();
+				return -1;
+			}
+			break;
+		}
+		if (pos > 0)
+			ctext.erase(0, pos);
+
+		if ((pos = ctext.find(marker::opmsg_end)) == string::npos) {
+			estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
+			return -1;
+		}
+
+		// split off one message
+		string s = ctext.substr(0, pos + marker::opmsg_end.size());
+		ctext.erase(0, pos + marker::opmsg_end.size());
+
+		message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
+
+		if (config::peer_isolation)
+			msg.enable_peer_isolation();
+
+		r = msg.decrypt(s);
+		if (r != 1) {
+			// Due to Cc, it could be a message we find no persona for
+			if (r == 0)
+				continue;
+			estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl; eflush();
+			return r;
+		}
+
+		if (msg.kex_id() == marker::rsa_kex_id ||
+		    msg.kex_id() == marker::ec_kex_id)
+			estr<<prefix<<"warn: Your peer is out of (EC)DH keys and uses EC/RSA fallback mode.\n";
+
+		estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
+		if (msg.get_srcname().size() > 0)
+			estr<<" ("<<msg.get_srcname()<<")";
+		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n"; eflush();
+
+		if (write_msg(config::outfile, s, found_one) < 0) {
+			estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n"; eflush();
+			return -1;
+		}
+
+		// only burn keys after everything else was a success, including
+		// writing of plaintext message
+		persona p(config::cfgbase, msg.dst_id());
+		if (config::burn) {
+			p.del_dh_priv(msg.kex_id());
+			p.del_dh_pub(msg.kex_id());
+			p.del_dh_id(msg.kex_id());
+		} else {
+			p.used_key(msg.kex_id(), 1);
+		}
+		found_one = 1;
 	}
-	if (pos > 0)
-		ctext.erase(0, pos);
-	if ((pos = ctext.find(marker::opmsg_end)) == string::npos) {
-		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
-		return -1;
-	}
-	// cut off anything at the end
-	ctext.erase(pos + marker::opmsg_end.size());
 
-	message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
-
-	if (config::peer_isolation)
-		msg.enable_peer_isolation();
-
-	if (msg.decrypt(ctext) < 0) {
-		estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl; eflush();
-		return -1;
-	}
-
-	if (msg.kex_id() == marker::rsa_kex_id ||
-	    msg.kex_id() == marker::ec_kex_id)
-		estr<<prefix<<"warn: Your peer is out of (EC)DH keys and uses EC/RSA fallback mode.\n";
-
-	estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
-	if (msg.get_srcname().size() > 0)
-		estr<<" ("<<msg.get_srcname()<<")";
-	estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n"; eflush();
-
-	if (write_msg(config::outfile, ctext) < 0) {
-		estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n"; eflush();
-		return -1;
-	}
-
-	// only burn keys after everything else was a success, including
-	// writing of plaintext message
-	persona p(config::cfgbase, msg.dst_id());
-	if (config::burn) {
-		p.del_dh_priv(msg.kex_id());
-		p.del_dh_pub(msg.kex_id());
-		p.del_dh_id(msg.kex_id());
-	} else {
-		p.used_key(msg.kex_id(), 1);
-	}
 	return 0;
 }
 
@@ -546,7 +565,7 @@ int do_verify(const string &verify_file)
 
 	message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 
-	if (msg.decrypt(ctext) < 0) {
+	if (msg.decrypt(ctext) != 1) {
 		estr<<prefix<<"ERROR: verifying message: "<<msg.why()<<endl; eflush();
 		return -1;
 	}
@@ -875,7 +894,8 @@ int main(int argc, char **argv)
 	        {nullptr, 0, nullptr, 0}};
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
-	string detached_file = "", dst_id = "", verify_file = "", name = "", link_src = "";
+	string detached_file = "", verify_file = "", name = "", link_src = "", s = "";
+	vector<string> dst_ids;
 
 	umask(077);
 
@@ -942,7 +962,13 @@ int main(int argc, char **argv)
 			break;
 		case 'E':
 			cmode = CMODE_ENCRYPT;
-			dst_id = optarg;
+			s = optarg;
+			s.erase(remove(s.begin(), s.end(), ' '), s.end());
+
+			// remove any leading 0x in the ID's, as passed by mutt etc.
+			if (s.find("0x") == 0)
+				s.erase(0, 2);
+			dst_ids.push_back(s);
 			break;
 		case 'D':
 			cmode = CMODE_DECRYPT;
@@ -1046,18 +1072,30 @@ int main(int argc, char **argv)
 
 	// strip of spaces in case of split format id given
 	config::my_id.erase(remove(config::my_id.begin(), config::my_id.end(), ' '), config::my_id.end());
-	dst_id.erase(remove(dst_id.begin(), dst_id.end(), ' '), dst_id.end());
+
 
 	// remove any leading 0x in the ID's, as passed by mutt etc.
-	if (dst_id.find("0x") == 0)
-		dst_id.erase(0, 2);
 	if (config::my_id.find("0x") == 0)
 		config::my_id.erase(0, 2);
 
 	switch (cmode) {
 	case CMODE_ENCRYPT:
-		estr<<prefix<<"encrypting for persona "<<idformat(dst_id)<< "\n"; eflush();
-		r = do_encrypt(dst_id);
+		s = "";
+		if (read_msg(config::infile, s) < 0) {
+			estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
+			return -1;
+		}
+		c = 0;
+		for (auto dst_id : dst_ids) {
+			estr<<prefix<<"encrypting for persona "<<idformat(dst_id)<< "\n"; eflush();
+
+			// last parameter to signal if encrypted blob may be
+			// appended to previous output
+			r = do_encrypt(dst_id, s, c % 2);
+			if (r < 0)
+				break;
+			++c;
+		}
 		break;
 	case CMODE_DECRYPT:
 		estr<<prefix<<"decrypting\n"; eflush();

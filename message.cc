@@ -141,7 +141,7 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 		result += "\n";
 	}
 	result += marker::sig_end;
-	return 0;
+	return 1;
 }
 
 
@@ -212,7 +212,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (calgo == "null") {
 		outmsg += marker::opmsg_databegin;
 		outmsg += raw;
-		if (sign(outmsg, src_persona, b64sig) < 0)
+		if (sign(outmsg, src_persona, b64sig) != 1)
 			return build_error("encrypt::" + err, -1);
 
 		outmsg.insert(0, b64sig);
@@ -397,7 +397,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (b64_aad_tag.size() > 0)
 		outmsg.insert(aad_tag_insert_pos, b64_aad_tag);
 
-	if (sign(outmsg, src_persona, b64sig) < 0)
+	if (sign(outmsg, src_persona, b64sig) != 1)
 		return build_error("encrypt::" + err, -1);
 
 	outmsg.insert(0, b64sig);
@@ -410,7 +410,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	raw = outmsg;
 
-	return 0;
+	return 1;
 }
 
 
@@ -520,7 +520,7 @@ int message::decrypt(string &raw)
 	// for src persona, we only need native (RSA or EC) key for signature validation
 	unique_ptr<persona> src_persona(new (nothrow) persona(cfgbase, src_id_hex));
 	if (!src_persona.get() || src_persona->load(marker::rsa_kex_id) < 0 || !src_persona->can_verify())
-		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, -1);
+		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, 0);
 
 	// check sig
 	EVP_MD_CTX_init(&md_ctx);
@@ -544,6 +544,23 @@ int message::decrypt(string &raw)
 
 	src_name = src_persona->get_name();
 
+	// dst persona
+	if ((pos = raw.find(marker::dst_id)) == string::npos)
+		return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
+	pos += marker::dst_id.size();
+	nl = raw.find("\n", pos);
+	if (nl == string::npos || nl - pos > max_sane_string)
+		return build_error("decrypt: Not in OPMSGv1/2 format (13).", -1);
+	s = raw.substr(pos, nl - pos);
+	if (!is_hex_hash(s))
+		return build_error("decrypt: Not in OPMSGv1/2 format (14).", -1);
+	dst_id_hex = s;
+
+	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
+	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0)
+		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
+	
+
 	// new (ec)dh keys included for later (EC)DH kex?
 	string newdh = "";
 	for (;;) {
@@ -552,7 +569,7 @@ int message::decrypt(string &raw)
 		if ((nl = raw.find(marker::ec_dh_end, pos)) == string::npos)
 			break;
 		if (nl - pos > max_sane_string)
-			return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
 		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
 		ecdh_keys.push_back(newdh);
@@ -567,57 +584,42 @@ int message::decrypt(string &raw)
 	// if null encryption, thats all!
 	if (calgo == "null") {
 		if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-			return build_error("decrypt: Not in OPMSGv1/2 format (13).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
 		raw.erase(0, pos + marker::opmsg_databegin.size());
 		return 0;
 	}
 
 	// kex id
 	if ((pos = raw.find(marker::kex_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (14).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
 	pos += marker::kex_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
 	s = raw.substr(pos, nl - pos);
 	bool has_dh_key = (s != marker::rsa_kex_id);
 	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
 	kex_id_hex = s;
 
 	// the (EC)DH public part
 	if ((pos = raw.find(marker::kex_begin)) == string::npos || (nl = raw.find(marker::kex_end, pos)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (20).", -1);
 	if (nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
+		return build_error("decrypt: Not in OPMSGv1/2 format (21).", -1);
 	string b64_kexdh = raw.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
 	raw.erase(pos, nl - pos + marker::kex_end.size());
 	b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
 	string kexdh = "";
 	b64_decode(b64_kexdh, kexdh);
 	if (kexdh.empty())
-		return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
-
-	// dst persona
-	if ((pos = raw.find(marker::dst_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (20).", -1);
-	pos += marker::dst_id.size();
-	nl = raw.find("\n", pos);
-	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (21).", -1);
-	s = raw.substr(pos, nl - pos);
-	if (!is_hex_hash(s))
 		return build_error("decrypt: Not in OPMSGv1/2 format (22).", -1);
-	dst_id_hex = s;
 
-	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
-	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0)
-		return build_error("decrypt:: Unknown dst persona " + dst_id_hex, -1);
 	if (has_dh_key) {
 		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
-			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, -1);
+			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, 0);
 		if (!ec_dh->can_decrypt())
-			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, -1);
+			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, 0);
 		if (peer_isolation && !ec_dh->matches_peer_id(src_id_hex))
 			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh->get_peer_id() +
 			                   ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again\n"
@@ -629,7 +631,7 @@ int message::decrypt(string &raw)
 	unique_ptr<unsigned char[]> secret(nullptr);
 	if (!has_dh_key) {
 		if (!dst_persona->can_decrypt())
-			return build_error("decrypt: No private PKEY for persona " + dst_persona->get_id(), -1);
+			return build_error("decrypt: No private PKEY for persona " + dst_persona->get_id(), 0);
 		// kexdh contains pub encrypted secret, not DH BIGNUM
 		evp = dst_persona->get_pkey()->priv;
 
@@ -767,7 +769,7 @@ int message::decrypt(string &raw)
 	raw = plaintext;
 	plaintext.clear();
 
-	return 0;
+	return 1;
 }
 
 
