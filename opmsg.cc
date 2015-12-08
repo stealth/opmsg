@@ -895,6 +895,7 @@ int main(int argc, char **argv)
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
 	string detached_file = "", verify_file = "", name = "", link_src = "", s = "";
+	string::size_type ridx = string::npos;
 	vector<string> dst_ids;
 
 	umask(077);
@@ -963,12 +964,31 @@ int main(int argc, char **argv)
 		case 'E':
 			cmode = CMODE_ENCRYPT;
 			s = optarg;
-			s.erase(remove(s.begin(), s.end(), ' '), s.end());
 
-			// remove any leading 0x in the ID's, as passed by mutt etc.
-			if (s.find("0x") == 0)
-				s.erase(0, 2);
-			dst_ids.push_back(s);
+			// mutt has some special calling 'conventions'. detect mutt by 0x prefix for the
+			// recipient IDs:
+			if (s.find("0x") != string::npos) {
+				// in case the quotes are still there
+				s.erase(remove(s.begin(), s.end(), '\''), s.end());
+
+				// In case of multiple recipients, they are split by spaces:
+				// -E 0x11223344 0x55667788 ...
+				for (ridx = 0;;) {
+					ridx = s.find(" ", ridx);
+					// last recipient ID or single one
+					if (ridx == string::npos || ridx < 3) {
+						s.erase(0, 2);
+						dst_ids.push_back(s);
+						break;
+					}
+					// 2 to also get rid of leading "0x"
+					dst_ids.push_back(s.substr(2, ridx - 2));
+					s.erase(0, ridx + 1);
+				}
+			} else {
+				s.erase(remove(s.begin(), s.end(), ' '), s.end());
+				dst_ids.push_back(s);
+			}
 			break;
 		case 'D':
 			cmode = CMODE_DECRYPT;
