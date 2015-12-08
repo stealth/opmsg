@@ -559,7 +559,7 @@ int message::decrypt(string &raw)
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
 	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0)
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
-	
+
 
 	// new (ec)dh keys included for later (EC)DH kex?
 	string newdh = "";
