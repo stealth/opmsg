@@ -494,7 +494,7 @@ int do_decrypt()
 		// Only an error if no opmg found so far
 		if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
 			if (!found_one) {
-				estr<<prefix<<"ERROR: Missing persona/kex keys or not in OPMSG format.\n"; eflush();
+				estr<<prefix<<"ERROR: Missing persona/kex keys or not in OPMSG format.\n";
 				return -1;
 			}
 			break;
@@ -503,7 +503,7 @@ int do_decrypt()
 			ctext.erase(0, pos);
 
 		if ((pos = ctext.find(marker::opmsg_end)) == string::npos) {
-			estr<<prefix<<"ERROR: Infile not in OPMSG format.\n"; eflush();
+			estr<<prefix<<"ERROR: Infile not in OPMSG format.\n";
 			return -1;
 		}
 
@@ -519,9 +519,11 @@ int do_decrypt()
 		r = msg.decrypt(s);
 		if (r != 1) {
 			// Due to Cc, it could be a message we find no persona for
-			if (r == 0)
+			if (r == 0) {
+				estr<<prefix<<msg.why();
 				continue;
-			estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl; eflush();
+			}
+			estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
 			return r;
 		}
 
@@ -532,7 +534,8 @@ int do_decrypt()
 		estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 		if (msg.get_srcname().size() > 0)
 			estr<<" ("<<msg.get_srcname()<<")";
-		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n"; eflush();
+		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n";
+		eflush();
 
 		if (write_msg(config::outfile, s, found_one) < 0) {
 			estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n"; eflush();

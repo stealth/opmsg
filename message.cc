@@ -544,20 +544,34 @@ int message::decrypt(string &raw)
 
 	src_name = src_persona->get_name();
 
-	// dst persona
-	if ((pos = raw.find(marker::dst_id)) == string::npos)
+	// kex id first, so dst persona can load this kex id
+	if ((pos = raw.find(marker::kex_id)) == string::npos)
 		return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
-	pos += marker::dst_id.size();
+	pos += marker::kex_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
 		return build_error("decrypt: Not in OPMSGv1/2 format (13).", -1);
 	s = raw.substr(pos, nl - pos);
+	bool has_dh_key = (s != marker::rsa_kex_id);
 	if (!is_hex_hash(s))
 		return build_error("decrypt: Not in OPMSGv1/2 format (14).", -1);
+	kex_id_hex = s;
+
+
+	// dst persona
+	if ((pos = raw.find(marker::dst_id)) == string::npos)
+		return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
+	pos += marker::dst_id.size();
+	nl = raw.find("\n", pos);
+	if (nl == string::npos || nl - pos > max_sane_string)
+		return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
+	s = raw.substr(pos, nl - pos);
+	if (!is_hex_hash(s))
+		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
 	dst_id_hex = s;
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
-	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0)
+	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || !dst_persona->can_decrypt())
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
 
 
@@ -569,7 +583,7 @@ int message::decrypt(string &raw)
 		if ((nl = raw.find(marker::ec_dh_end, pos)) == string::npos)
 			break;
 		if (nl - pos > max_sane_string)
-			return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
 		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
 		ecdh_keys.push_back(newdh);
@@ -584,23 +598,10 @@ int message::decrypt(string &raw)
 	// if null encryption, thats all!
 	if (calgo == "null") {
 		if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-			return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
+			return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
 		raw.erase(0, pos + marker::opmsg_databegin.size());
 		return 1;
 	}
-
-	// kex id
-	if ((pos = raw.find(marker::kex_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
-	pos += marker::kex_id.size();
-	nl = raw.find("\n", pos);
-	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
-	s = raw.substr(pos, nl - pos);
-	bool has_dh_key = (s != marker::rsa_kex_id);
-	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
-	kex_id_hex = s;
 
 	// the (EC)DH public part
 	if ((pos = raw.find(marker::kex_begin)) == string::npos || (nl = raw.find(marker::kex_end, pos)) == string::npos)
