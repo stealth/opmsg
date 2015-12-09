@@ -490,6 +490,7 @@ int do_decrypt()
 	// Might be multiple opmsg appended in a row (Cc mail), try to find
 	// one thats for us
 	for (;;) {
+		estr<<prefix<<"decrypting\n";
 
 		// Only an error if no opmg found so far
 		if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
@@ -520,7 +521,7 @@ int do_decrypt()
 		if (r != 1) {
 			// Due to Cc, it could be a message we find no persona for
 			if (r == 0) {
-				estr<<prefix<<msg.why();
+				estr<<prefix<<msg.why()<<endl;
 				continue;
 			}
 			estr<<prefix<<"ERROR: decrypting message: "<<msg.why()<<endl;
@@ -1131,7 +1132,6 @@ int main(int argc, char **argv)
 		}
 		break;
 	case CMODE_DECRYPT:
-		estr<<prefix<<"decrypting\n"; eflush();
 		r = do_decrypt();
 		break;
 	case CMODE_SIGN:
