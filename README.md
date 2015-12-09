@@ -187,8 +187,8 @@ libcrypto is outdated, but its recommended to use the brainpool curves which
 dont keep any secrets about how their group parameters were selected.
 
 
-Persona linking - if required
------------------------------
+Persona linking
+---------------
 
 Although this step is not strictly necessary, **it is recommended**. As personas are easily
 created, you can (should) create a dedicated persona for each of your "projects" or
@@ -334,6 +334,24 @@ use a mix of _GPG_ and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
 parallel.
+
+Cc and Bcc
+----------
+
+Since `version=1.65` opmsg supports Cc/Bcc from mails, e.g. you may specify more than
+one `-E` persona recipient. However if you used to Cc messages to yourself for
+archiving, you must not use `--burn` because in fact you are referencing session
+keys that were initially generated for someone else. Then at times when this peer
+send you encrypted messages, you will miss that key.
+
+Please note that in general using crypted mails and Cc is leaking privacy, as
+the destination personas see whats in your keystore and which key ids you are
+referencing. Its also asking for headache if you did not set up your keystore properly
+(linking personas and keeping the link ids up to date, removing dead personas etc.)
+
+If you are operating, you may also consider a dedicated account (machine) with a dedicated opmsg
+setup so that you dont accidently sign operational messages with source personas that
+link to a publically known profile. Deniable messages wont help in that case.
 
 Config file
 -----------
