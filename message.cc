@@ -223,7 +223,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		outmsg.insert(0, marker::opmsg_begin);
 		outmsg += marker::opmsg_end;
 		raw = outmsg;
-		return 0;
+		return 1;
 	}
 
 	bool has_aad = (calgo.find("gcm") != string::npos);
@@ -586,7 +586,7 @@ int message::decrypt(string &raw)
 		if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
 			return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
 		raw.erase(0, pos + marker::opmsg_databegin.size());
-		return 0;
+		return 1;
 	}
 
 	// kex id
