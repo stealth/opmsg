@@ -332,7 +332,9 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		return -1;
 	}
 
-	if (dst_id.size() == 16 || config::my_id.size() == 16) {
+	string src_id = config::my_id;
+
+	if (dst_id.size() == 16 || src_id.size() == 16) {
 		if (ks->load() < 0) {
 			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
@@ -344,17 +346,17 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		}
 		// any default src linked to this target? override!
 		if (dst_p->linked_src().size() > 0) {
-			config::my_id = dst_p->linked_src();
+			src_id = dst_p->linked_src();
 
 			// check if that persona was linked to itself. That means OTR-like sharing
 			// of the EC/RSA persona secret and Kex-id's chosen for encryption must not have
 			// the secret part on our keysore since peer who is decrypting, would be missing it.
 			// Only Kex-id's with missing secret part have the secret part at the peer side.
-			if (config::my_id == dst_p->get_id())
+			if (src_id == dst_p->get_id())
 				linked_to_myself = 1;
 		}
 
-		if (!(src_p = ks->find_persona(config::my_id))) {
+		if (!(src_p = ks->find_persona(src_id))) {
 			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
@@ -370,14 +372,14 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		}
 		// any default src linked to this target? override!
 		if (dst_p->linked_src().size() > 0) {
-			config::my_id = dst_p->linked_src();
+			src_id = dst_p->linked_src();
 
 			// see above comment
-			if (config::my_id ==  dst_p->get_id())
+			if (src_id ==  dst_p->get_id())
 				linked_to_myself = 1;
 		}
 
-		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
+		src_persona.reset(new (nothrow) persona(config::cfgbase, src_id));
 		if (!(src_p = src_persona.get())) {
 			estr<<prefix<<"ERROR: OOM\n"; eflush();
 			return -1;
