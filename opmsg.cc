@@ -619,6 +619,8 @@ int do_newpersona(const string &name, const string &type)
 	estr<<prefix<<"opmsg --import --phash "<<config::phash;
 	if (name.size() > 0)
 		estr<<" --name "<<name;
+	if (config::deniable)
+		estr<<" --deniable";
 	estr<<"\n\n";
 	eflush();
 	ostr<<pub;
@@ -784,6 +786,12 @@ int do_import(const string &name)
 	estr<<prefix<<"with the id that your peer got printed when generating that persona.\n";
 	estr<<prefix<<"If they do not match, you can delete this persona by removing the subdirectory\n";
 	estr<<prefix<<"of obove id inside your ~/.opmsg directory.\n";
+
+	// add_persona() also sets persona type. Check for RSA personas which need also DH params
+	// in the deniable case since it also generates new DH Kex keys
+	if (config::deniable && p->get_type() == marker::rsa)
+		estr<<"\n"<<prefix<<"You imported a deniable RSA persona. Dont forget 'opmsg --newdhp -P <above id>'\n";
+
 	eflush();
 	return 0;
 }
