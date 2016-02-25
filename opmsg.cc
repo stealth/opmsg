@@ -444,6 +444,8 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	// in case of errors, the message cant get sent out. So, erase generated DH
 	// keys from keystore
 	if (r1 < 1 || r2 < 0) {
+		int save_errno = errno;
+
 		for (auto i = newdh.begin(); i != newdh.end(); ++i) {
 			src_p->del_dh_pub((*i)->hex);
 			src_p->del_dh_priv((*i)->hex);
@@ -454,7 +456,7 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 			estr<<prefix<<"ERROR: "<<msg.why()<<endl;
 			eflush();
 		} else {
-			estr<<prefix<<"ERROR: writing outfile: "<<strerror(errno)<<"\n";
+			estr<<prefix<<"ERROR: writing outfile: "<<strerror(save_errno)<<"\n";
 			eflush();
 		}
 		return -1;
