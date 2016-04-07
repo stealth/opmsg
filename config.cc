@@ -44,7 +44,7 @@ int native_crypt = 0;
 // when creating or importing personas, do it deniable
 int deniable = 0;
 
-unsigned int version = 1;
+unsigned int version = 2;
 unsigned int peer_isolation = 0;
 
 std::string rsa_e = "65537";
