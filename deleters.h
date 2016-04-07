@@ -56,6 +56,8 @@ extern "C" typedef void (*EC_POINT_del)(EC_POINT *);
 
 extern "C" typedef int (*FILE_del)(FILE *);
 
+extern "C" typedef void (*free_del)(void *);
+
 extern "C" int ffclose(FILE *f);
 
 }

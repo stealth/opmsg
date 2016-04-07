@@ -76,7 +76,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.65 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.66 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -485,6 +485,11 @@ int do_decrypt()
 	if (read_msg(config::infile, ctext) < 0) {
 		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
+	}
+
+	if (!config::nodos2unix && ctext.substr(0, 1024).find('\r') != string::npos) {
+		estr<<prefix<<"WARN: removing CR from newlines. Inserted by your mailer?\n";
+		ctext.erase(remove(ctext.begin(), ctext.end(), '\r'), ctext.end());
 	}
 
 	string::size_type pos = 0;

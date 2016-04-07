@@ -39,6 +39,8 @@ extern unsigned int peer_isolation;
 
 extern bool burn;
 
+extern bool nodos2unix;
+
 }
 
 int parse_config(const std::string &);

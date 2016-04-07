@@ -398,7 +398,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(nullptr, EVP_PKEY_free);
 	if (pub_pem.size() > 0) {
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
 		if (!bio.get())
 			return build_error("add_persona: OOM", nullptr);
 
@@ -422,7 +423,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
 	if (priv_pem.size() > 0) {
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(priv_pem.c_str()), priv_pem.size()), BIO_free);
+		unique_ptr<char, free_del> sdup(strdup(priv_pem.c_str()), free);
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), priv_pem.size()), BIO_free);
 		if (!bio.get())
 			return build_error("add_persona: OOM", nullptr);
 
@@ -938,14 +940,16 @@ PKEYbox *persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	if (keys.count(hex) > 0)
 		return keys[hex];
 
-	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+	unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
+	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
 	if (!bio.get())
 		return build_error("gen_kex_key: OOM", nullptr);
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp_pub.get())
 		return build_error("gen_kex_key::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
 
-	bio.reset(BIO_new_mem_buf(strdup(priv_pem.c_str()), priv_pem.size()));
+	sdup.reset(strdup(priv_pem.c_str()));
+	bio.reset(BIO_new_mem_buf(sdup.get(), priv_pem.size()));
 	if (!bio.get())
 		return build_error("gen_kex_key: OOM", nullptr);
 
@@ -1092,7 +1096,8 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 	struct stat st;
 	int fd = -1;
 
-	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(strdup(pub_pem.c_str()), pub_pem.size()), BIO_free);
+	unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
+	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
 	if (!bio.get())
 		return build_error("add_dh_pubkey: OOM", nullptr);
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);

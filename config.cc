@@ -76,6 +76,8 @@ std::string curve = "secp521r1";
 
 bool burn = 0;
 
+bool nodos2unix = 0;
+
 std::string cfgbase = ".opmsg";
 
 }
@@ -141,6 +143,8 @@ int parse_config(const string &cfgbase)
 			config::native_crypt = 1;
 		else if (sline == "burn")
 			config::burn = 1;
+		else if (sline == "no-dos2unix")
+			config::nodos2unix = 1;
 		else if (sline == "version=1")
 			config::version = 1;
 		else if (sline == "version=2")
