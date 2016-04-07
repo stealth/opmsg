@@ -38,6 +38,7 @@ extern unsigned int version;
 extern unsigned int peer_isolation;
 
 extern bool burn;
+extern bool mux_gpg;
 
 extern bool nodos2unix;
 

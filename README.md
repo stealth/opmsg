@@ -55,7 +55,7 @@ $ make
 $ cp opmsg /usr/local/bin/
 $ opmsg
 
-opmsg: version=1.64 -- (C) 2015 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.67 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg
 
 
 Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
@@ -68,6 +68,7 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         --native,       -R      EC/RSA override (dont use existing (EC)DH keys)
         --encrypt,      -E      recipients persona hex id (-i to -o, needs -P)
         --decrypt,      -D      decrypt --in to --out
+                        -d      same as -D, but invoke gpg if PGP data was found
         --sign,         -S      create detached signature file from -i via -P
         --verify,       -V      vrfy hash contained in detached file against -i
         --persona,      -P      your persona hex id as used for signing
@@ -90,7 +91,6 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         --name,         -n      use this name for newly created personas
         --burn                  (!dangerous!) burn private (EC)DH key after
                                 decryption to achieve 'full' PFS
-
 
 ```
 
@@ -334,6 +334,11 @@ use a mix of _GPG_ and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
 parallel.
+You may also use `-d` switch to decrypt messages, which tells opmsg
+to forward the data to gpg, if a PGP message was detected. `-d` expects
+the input file as argument, to imitate gpg behavior. This allows for easy
+decrypt-integration into MUAs which do not allow to specify decryption
+commandline parameters.
 
 Cc and Bcc
 ----------

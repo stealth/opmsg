@@ -76,7 +76,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.66 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.67 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -111,6 +111,7 @@ void usage(const char *p)
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
 	    <<"\t--decrypt,\t-D\tdecrypt --in to --out"<<endl
+	    <<"\t\t\t-d\tsame as -D, but invoke gpg if PGP data was found"<<endl
 	    <<"\t--sign,\t\t-S\tcreate detached signature file from -i via -P"<<endl
 	    <<"\t--verify,\t-V\tvrfy hash contained in detached file against -i"<<endl
 	    <<"\t--persona,\t-P\tyour persona hex id as used for signing"<<endl
@@ -484,6 +485,31 @@ int do_decrypt()
 
 	if (read_msg(config::infile, ctext) < 0) {
 		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
+		return -1;
+	}
+
+	// As convenience, if using "-d" for decryption, opmsg will pass
+	// PGP messages along to gpg, as some MUAs are stupid enough to hardcode
+	// parameters
+	if (config::mux_gpg && ctext.find("-----BEGIN PGP MESSAGE-----") != string::npos) {
+		estr<<prefix<<"WARN: PGP encrypted data found. Passing along!\n"; eflush();
+		char *a[6]{nullptr};
+		int off = 0;
+		a[0] = strdup("gpg2");
+		if (config::outfile != "/dev/stdout") {
+			a[1] = strdup("-o");
+			a[2] = strdup(config::outfile.c_str());
+			off = 2;
+		}
+		a[1 + off] = strdup("-d");
+		a[2 + off] = strdup(config::infile.c_str());
+		execvp(a[0], a);
+		free(a[0]);
+		a[0] = strdup("gpg");
+		execvp(a[0], a);
+		estr<<prefix<<"ERROR: Cannot invoke gpg: "<<strerror(errno)<<"\n"; eflush();
+		for (auto ai : a)
+			free(ai);
 		return -1;
 	}
 
@@ -968,7 +994,7 @@ int main(int argc, char **argv)
 	}
 
 
-	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
+	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:d:", lopts, &opt_idx)) != -1) {
 		switch (c) {
 		case 'c':
 			// was already handled
@@ -1011,6 +1037,11 @@ int main(int argc, char **argv)
 				dst_ids.push_back(s);
 			}
 			break;
+		// GPG compatibility switch
+		case 'd':
+			config::infile = optarg;
+			config::mux_gpg = 1;
+			// fallthrough
 		case 'D':
 			cmode = CMODE_DECRYPT;
 			break;
