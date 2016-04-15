@@ -75,7 +75,6 @@ std::string curve = "secp521r1";
 #endif
 
 bool burn = 0;
-bool mux_gpg = 0;
 
 bool nodos2unix = 0;
 
