@@ -15,10 +15,10 @@ INC=
 #LIBS+=-Wl,--rpath=/usr/local/ssl/lib
 
 #for LibreSSL setups, define your paths here
-INC+=-I/usr/local/libressl/include
-LIBS+=-L/usr/local/libressl/lib64
-LIBS+=-Wl,--rpath=/usr/local/libressl/lib64
-DEFS+=-DHAVE_BN_GENCB_NEW=0
+#INC+=-I/usr/local/libressl/include
+#LIBS+=-L/usr/local/libressl/lib64
+#LIBS+=-Wl,--rpath=/usr/local/libressl/lib64
+#DEFS+=-DHAVE_BN_GENCB_NEW=0
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
@@ -26,10 +26,16 @@ LD=c++
 LDFLAGS=
 LIBS+=-lcrypto
 
-all: opmsg
+all: opmsg opmux
 
 opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o
 	$(LD) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o $(LDFLAGS) $(LIBS) -o $@
+
+opmux: keystore.o opmux.o misc.o marker.o config.o deleters.o
+	$(LD) keystore.o opmux.o misc.o marker.o config.o deleters.o $(LDFLAGS) $(LIBS) -o $@
+
+opmux.o: opmux.cc
+	$(CXX) $(CXXFLAGS) -c $<
 
 opmsg.o: opmsg.cc
 	$(CXX) $(CXXFLAGS) -c $<
