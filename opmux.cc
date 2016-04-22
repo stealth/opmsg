@@ -29,9 +29,12 @@
 #include <string>
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 #include <fcntl.h>
+#include <poll.h>
 #include <unistd.h>
 #include <getopt.h>
+#include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 
@@ -42,9 +45,10 @@ using namespace opmsg;
 
 
 // Only the first 4k to distinguish between opmsg and gpg
-int read_msg(const string &p, string &msg)
+int read_msg(const string &p, string &tmp_path, string &msg)
 {
 	msg = "";
+	tmp_path = "";
 	int fd = 0;
 	bool was_opened = 0;
 
@@ -61,14 +65,46 @@ int read_msg(const string &p, string &msg)
 	char buf[0x1000];
 	memset(buf, 0, sizeof(buf));
 
-	// pread() to peek on tty's
-	ssize_t r = pread(fd, buf, sizeof(buf) - 1, 0);
+	ssize_t r = pread(fd, buf, sizeof(buf), 0);
+	int saved_errno = errno;
 	if (was_opened)
 		close(fd);
-	if (r <= 0)
-		return -1;
-	msg = string(buf, r);
-	return 0;
+	if (r > 0) {
+		msg = string(buf, r);
+		return 0;
+	}
+
+	// cant peek on tty or pipe
+	if (r < 0 && saved_errno == ESPIPE) {
+		char tmpl[] = "/tmp/opmux.XXXXXX";
+		int fd2 = mkstemp(tmpl);
+		if (fd2 < 0)
+			return -1;
+		struct pollfd pfd{fd, POLLIN, 0};
+		for (;;) {
+			pfd.events = POLLIN;
+			pfd.revents = 0;
+			poll(&pfd, 1, 2000);
+			if ((pfd.revents & POLLIN) != POLLIN)
+				break;
+			r = read(fd, buf, sizeof(buf));
+			if (r <= 0)
+				break;
+			if (write(fd2, buf, r) != r) {
+				close(fd2);
+				unlink(tmpl);
+				return -1;
+			}
+			msg += string(buf, r);
+		}
+		lseek(fd2, SEEK_SET, 0);
+		dup2(fd2, 0);
+		close(fd2);
+		tmp_path = tmpl;
+		return 0;
+	}
+
+	return -1;
 }
 
 
@@ -140,6 +176,12 @@ string has_id(const string &r)
 }
 
 
+void sig_int(int x)
+{
+	return;
+}
+
+
 int main(int argc, char **argv, char **envp)
 {
 	struct option lopts[] = {
@@ -169,6 +211,7 @@ int main(int argc, char **argv, char **envp)
 
 	string infile = "-", outfile = "", rcpt = "";
 	int c = 0, opt_idx = 0;
+	pid_t pid = 0;
 	enum { MODE_ENCRYPT = 0, MODE_DECRYPT = 1, MODE_LIST = 2} mode = MODE_DECRYPT;
 
 	// getopt() reorders argv, so save old order
@@ -211,6 +254,12 @@ int main(int argc, char **argv, char **envp)
 		}
 	}
 
+	struct sigaction sa;
+	memset(&sa, 0, sizeof(sa));
+	sa.sa_handler = sig_int;
+	sigaction(SIGINT, &sa, nullptr);
+	sigaction(SIGPIPE, &sa, nullptr);
+
 	if (mode == MODE_LIST) {
 		if (optind < argc) {
 			if (has_id(argv[optind]).size() == 0)
@@ -222,13 +271,12 @@ int main(int argc, char **argv, char **envp)
 			exit(1);
 		}
 
-		pid_t child;
-		if ((child = fork()) == 0) {
+		if ((pid = fork()) == 0) {
 			execvpe(opmsg, opmsg_list, envp);
 			exit(1);
 		}
 
-		waitpid(child, nullptr, 0);
+		waitpid(pid, nullptr, 0);
 		gpg(oargv, envp);
 		exit(1);
 	}
@@ -241,24 +289,31 @@ int main(int argc, char **argv, char **envp)
 
 	if (mode == MODE_DECRYPT) {
 		// peek into input file
-		string msg = "";
-		if (read_msg(infile, msg) < 0)
-			gpg(oargv, envp);
+		string msg = "", tmp_p = "";
+		int r = read_msg(infile, tmp_p, msg);
 
-		// w/o newline, so opmsg could erase \r which might have erroneously been
-		// inserted by MUAs
-		if (msg.find("-----BEGIN OPMSG-----") != string::npos) {
-			char *opmsg_d[] = {opmsg, dec, in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
-			int idx = 3;
+		if ((pid = fork()) == 0) {
+			// w/o newline, so opmsg could erase \r which might have erroneously been
+			// inserted by MUAs
+			if (r == 0 && msg.find("-----BEGIN OPMSG-----") != string::npos) {
+				char *opmsg_d[] = {opmsg, dec, in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
+				int idx = 3;
 
-			if (outfile.size() > 0) {
-				opmsg_d[++idx] = out;
-				opmsg_d[++idx] = strdup(outfile.c_str());
-			}
-			execvpe(opmsg, opmsg_d, envp);
-		} else
-			gpg(oargv, envp);
+				if (outfile.size() > 0) {
+					opmsg_d[++idx] = out;
+					opmsg_d[++idx] = strdup(outfile.c_str());
+				}
+				execvpe(opmsg, opmsg_d, envp);
+			} else
+				gpg(oargv, envp);
+		}
 
+		int status = 0;
+		waitpid(pid, &status, 0);
+		if (tmp_p.size() > 0)
+			unlink(tmp_p.c_str());
+		if (WIFEXITED(status))
+			return WEXITSTATUS(status);
 		return -1;
 	}
 
