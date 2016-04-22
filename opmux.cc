@@ -276,7 +276,8 @@ int main(int argc, char **argv, char **envp)
 		if ((pid = fork()) == 0) {
 			execvpe(opmsg, opmsg_list, envp);
 			exit(1);
-		}
+		} else if (pid < 0)
+			exit(1);
 
 		waitpid(pid, nullptr, 0);
 		gpg(oargv, envp);
@@ -306,9 +307,11 @@ int main(int argc, char **argv, char **envp)
 					opmsg_d[++idx] = strdup(outfile.c_str());
 				}
 				execvpe(opmsg, opmsg_d, envp);
+				exit(1);
 			} else
 				gpg(oargv, envp);
-		}
+		} else if (pid < 0)
+			return -1;
 
 		int status = 0;
 		waitpid(pid, &status, 0);

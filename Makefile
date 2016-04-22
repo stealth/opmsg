@@ -15,10 +15,10 @@ INC=
 #LIBS+=-Wl,--rpath=/usr/local/ssl/lib
 
 #for LibreSSL setups, define your paths here
-INC+=-I/usr/local/libressl/include
-LIBS+=-L/usr/local/libressl/lib64
-LIBS+=-Wl,--rpath=/usr/local/libressl/lib64
-DEFS+=-DHAVE_BN_GENCB_NEW=0
+#INC+=-I/usr/local/libressl/include
+#LIBS+=-L/usr/local/libressl/lib64
+#LIBS+=-Wl,--rpath=/usr/local/libressl/lib64
+#DEFS+=-DHAVE_BN_GENCB_NEW=0
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
