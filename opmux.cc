@@ -44,7 +44,7 @@ using namespace std;
 using namespace opmsg;
 
 
-// Only the first 4k to distinguish between opmsg and gpg
+// Only the first 64k to distinguish between opmsg and gpg
 int read_msg(const string &p, string &tmp_path, string &msg)
 {
 	msg = "";
@@ -62,7 +62,7 @@ int read_msg(const string &p, string &tmp_path, string &msg)
 		was_opened = 1;
 	}
 
-	char buf[0x1000];
+	char buf[0x10000];
 	memset(buf, 0, sizeof(buf));
 
 	ssize_t r = pread(fd, buf, sizeof(buf), 0);

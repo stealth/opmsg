@@ -55,7 +55,7 @@ $ make
 $ cp opmsg /usr/local/bin/
 $ opmsg
 
-opmsg: version=1.67 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.69 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg
 
 
 Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
@@ -68,7 +68,6 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
         --native,       -R      EC/RSA override (dont use existing (EC)DH keys)
         --encrypt,      -E      recipients persona hex id (-i to -o, needs -P)
         --decrypt,      -D      decrypt --in to --out
-                        -d      same as -D, but invoke gpg if PGP data was found
         --sign,         -S      create detached signature file from -i via -P
         --verify,       -V      vrfy hash contained in detached file against -i
         --persona,      -P      your persona hex id as used for signing
@@ -305,10 +304,11 @@ Once the message is successfully decrypted, the (EC)DH key that was used
 is overwritten and deleted from storage.
 
 
-mutt integration
-----------------
+MUA integration
+---------------
 
-Just add to your _.muttrc_:
+There are two ways to integrate _opmsg_ into your MUA. For cool
+MUAs like __mutt__, you may build a dedicated _.muttrc_ by adding:
 
 ```
 # Add a header so to easy pick opmsg via procmail rules
@@ -334,11 +334,36 @@ use a mix of _GPG_ and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
 parallel.
-You may also use `-d` switch to decrypt messages, which tells opmsg
-to forward the data to gpg, if a PGP message was detected. `-d` expects
-the input file as argument, to imitate gpg behavior. This allows for easy
-decrypt-integration into MUAs which do not allow to specify decryption
-commandline parameters.
+But theres also another option: Using _opmux_:
+
+```
+set pgp_long_ids
+
+set pgp_decode_command="/usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
+set pgp_verify_command="/usr/local/bin/opmux --quiet --batch --output - --verify %s %f"
+set pgp_decrypt_command="/usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
+
+set pgp_encrypt_only_command="/usr/local/bin/opmux --batch --quiet --output - --encrypt \
+                              --textmode --armor --always-trust -r '%r' %f"
+set pgp_encrypt_sign_command="/usr/local/bin/opmux --passphrase-fd 0 --batch --quiet --textmode \
+                  --output - --encrypt --sign %?a?-u %a? --armor --always-trust -r '%r' %f"
+
+set pgp_list_pubring_command="/usr/local/bin/opmux --batch --quiet --with-colons --list-keys %r"
+
+```
+
+_opmux_ is a wrapper for _opmsg_ and _gpg_, which transparently forwards encryption and decryption
+requests to the right program, by checking message markers and persona ids.
+This requires your personas to be properly `--link`ed or having a valid `my_id` in your
+_opmsg_ config. _opmux_ may miss recipients with Cc/Bcc for gpg in above mutt setup.
+
+For __enigmail__ or other MUAs you would just configure the gpg-path to be `/usr/local/bin/opmux` and add
+`keyid-format long` to your _~/.gnupg/config_ file and you are done.
+
+All this however is just for convenience. The more GUI and layering you add to your
+_opmsg_ setup, the more chance you have to use wrong destination or source personas. So
+be sure to thoroughly test your setup. Again, make sure your personas are properly linked
+and you have a clean default persona id assigned in the config.
 
 Cc and Bcc
 ----------
@@ -370,7 +395,7 @@ unless you specify it via `-P` on the commandline or used `--link`:
 ```
 # opmsg sample config
 
-# 1 or 2. Default is 1. The KDF in version=2 is hardened against evil maid attacks.
+# 1 or 2. Default is 2. The KDF in version=2 is hardened against evil maid attacks.
 # Only use version=2 if you know your peer uses opmsg >= 1.60 that can handle version=2.
 # Your peer then automatically chooses right version. Theres no config change needed
 # for your peer.
