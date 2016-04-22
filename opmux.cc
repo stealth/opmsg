@@ -191,9 +191,11 @@ int main(int argc, char **argv, char **envp)
 		{"recipient", required_argument, nullptr, 'r'},
 	        {"list-keys", no_argument, nullptr, 'l'},
 	        {"output", required_argument, nullptr, 'o'},
+		{"local-user", required_argument, nullptr, 'u'},
 
 		{"passphrase-fd", required_argument, nullptr, 'I'},	// ignore
-		{"local-user", required_argument, nullptr, 'I'},
+		{"encrypt-to", required_argument, nullptr, 'I'},
+		{"hidden-encrypt-to", required_argument, nullptr, 'I'},
 		{"default-key", required_argument, nullptr, 'I'},
 		{"charset", required_argument, nullptr, 'I'},
 		{"display-charset", required_argument, nullptr, 'I'},
@@ -225,7 +227,7 @@ int main(int argc, char **argv, char **envp)
 	// suppress 'invalid option' error messages for gpg options that we
 	// do not parse ourselfs
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "edvr:lo:", lopts, &opt_idx)) != -1) {
+	while ((c = getopt_long(argc, argv, "edvr:lo:u:", lopts, &opt_idx)) != -1) {
 		opterr = 0;
 
 		switch (c) {

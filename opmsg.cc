@@ -76,7 +76,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.68 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.69 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -728,6 +728,7 @@ int do_list(const string &name)
 }
 
 
+// As per gnupg source keylist.c: list_keyblock_colon()
 int do_pgplist(const string &name)
 {
 	keystore ks(config::phash, config::cfgbase);
@@ -736,7 +737,8 @@ int do_pgplist(const string &name)
 
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (name.size() == 0 || i->second->get_name().find(name) != string::npos)
-			ostr<<"pub:u:1337:1:"<<idformat(i->second->get_id())<<":1::"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<"::eEsS\n";
+			ostr<<"pub:u:4096:1:"<<idformat(i->second->get_id())<<":1:0:::::eEsScCaA::+:::\n"
+			    <<"uid:u::::1:0:"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<":\n";
 	}
 	oflush();
 	return 0;
