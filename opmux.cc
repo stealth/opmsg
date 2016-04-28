@@ -192,6 +192,7 @@ int main(int argc, char **argv, char **envp)
 	        {"list-keys", no_argument, nullptr, 'l'},
 	        {"output", required_argument, nullptr, 'o'},
 		{"local-user", required_argument, nullptr, 'u'},
+		{"status-fd", required_argument, nullptr, 'f'},
 
 		{"passphrase-fd", required_argument, nullptr, 'I'},	// ignore
 		{"encrypt-to", required_argument, nullptr, 'I'},
@@ -202,7 +203,6 @@ int main(int argc, char **argv, char **envp)
 		{"compress-algo", required_argument, nullptr, 'I'},
 		{"cipher-algo", required_argument, nullptr, 'I'},
 		{"max-output", required_argument, nullptr, 'I'},
-		{"status-fd", required_argument, nullptr, 'I'},
 		{"digest-algo", required_argument, nullptr, 'I'},
 		{"trust-model", required_argument, nullptr, 'I'},
 	        {nullptr, 0, nullptr, 0}};
@@ -212,7 +212,7 @@ int main(int argc, char **argv, char **envp)
 	char *opmsg_list[] = {opmsg, list, idshort, nullptr, nullptr, nullptr};
 
 	string infile = "-", outfile = "", rcpt = "";
-	int c = 0, opt_idx = 0;
+	int c = 0, opt_idx = 0, status_fd = 2;
 	pid_t pid = 0;
 	enum { MODE_ENCRYPT = 0, MODE_DECRYPT = 1, MODE_LIST = 2} mode = MODE_DECRYPT;
 
@@ -227,7 +227,7 @@ int main(int argc, char **argv, char **envp)
 	// suppress 'invalid option' error messages for gpg options that we
 	// do not parse ourselfs
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "edvr:lo:u:", lopts, &opt_idx)) != -1) {
+	while ((c = getopt_long(argc, argv, "edvr:lo:u:f:", lopts, &opt_idx)) != -1) {
 		opterr = 0;
 
 		switch (c) {
@@ -246,6 +246,11 @@ int main(int argc, char **argv, char **envp)
 		case 'l':
 			mode = MODE_LIST;
 			break;
+		case 'f':
+			status_fd = atoi(optarg);
+			if (status_fd < 2 || status_fd > 1000)
+				status_fd = 2;
+			break;
 		case 'v':
 			gpg(argv, envp);
 			break;	// neverreached
@@ -255,6 +260,9 @@ int main(int argc, char **argv, char **envp)
 			break;
 		}
 	}
+
+	if (status_fd != 2)
+		dup2(status_fd, 2);
 
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
@@ -292,13 +300,16 @@ int main(int argc, char **argv, char **envp)
 
 	if (mode == MODE_DECRYPT) {
 		// peek into input file
+		bool has_opmsg = 0;
 		string msg = "", tmp_p = "";
 		int r = read_msg(infile, tmp_p, msg);
+		if (r == 0)
+			has_opmsg = (msg.find("-----BEGIN OPMSG-----") != string::npos);
 
 		if ((pid = fork()) == 0) {
 			// w/o newline, so opmsg could erase \r which might have erroneously been
 			// inserted by MUAs
-			if (r == 0 && msg.find("-----BEGIN OPMSG-----") != string::npos) {
+			if (has_opmsg) {
 				char *opmsg_d[] = {opmsg, dec, in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
 				int idx = 3;
 
@@ -317,8 +328,17 @@ int main(int argc, char **argv, char **envp)
 		waitpid(pid, &status, 0);
 		if (tmp_p.size() > 0)
 			unlink(tmp_p.c_str());
-		if (WIFEXITED(status))
-			return WEXITSTATUS(status);
+		if (WIFEXITED(status)) {
+			status = WEXITSTATUS(status);
+			if (status == 0 && has_opmsg) {
+				fprintf(stderr, "\n[GNUPG:] SIG_ID KEEPAWAYFROMFIRE 1970-01-01 0000000000"
+				                "\n[GNUPG:] GOODSIG 7350735073507350 opmsg"
+				                "\n[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 1970-01-01 00000000000"
+				                " 0 4 0 1 8 01 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+				                "\n[GNUPG:] TRUST_ULTIMATE\n");
+			}
+			return status;
+		}
 		return -1;
 	}
 
