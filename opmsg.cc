@@ -34,6 +34,7 @@
 #include <sys/types.h>
 
 #include "misc.h"
+#include "missing.h"
 #include "marker.h"
 #include "deleters.h"
 #include "config.h"
@@ -76,7 +77,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.69 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.70 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -236,7 +237,7 @@ int file2hexhash(const string &path, string &hexhash)
 
 	unsigned int hlen = 0;
 	unsigned char digest[EVP_MAX_MD_SIZE];	// 64 which matches sha512
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), algo2md(config::shash), nullptr) != 1)

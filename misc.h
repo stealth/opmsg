@@ -29,6 +29,7 @@ extern "C" {
 #include <openssl/evp.h>
 }
 
+
 namespace opmsg {
 
 std::string &blob2hex(const std::string &, std::string &);

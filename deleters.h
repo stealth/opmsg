@@ -38,6 +38,8 @@ extern "C" typedef void (*EVP_PKEY_CTX_del)(EVP_PKEY_CTX *);
 
 extern "C" typedef void (*EVP_MD_CTX_del)(EVP_MD_CTX *);
 
+extern "C" typedef void (*EVP_CIPHER_CTX_del)(EVP_CIPHER_CTX *);
+
 extern "C" typedef void (*DH_del)(DH *);
 
 extern "C" typedef void (*RSA_del)(RSA *);

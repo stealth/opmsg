@@ -84,6 +84,10 @@ const EVP_CIPHER *algo2cipher(const string &s)
 		cipher = EVP_aes_256_gcm();
 	else if (s == "aes256ctr")
 		cipher = EVP_aes_256_ctr();
+#ifdef CHACHA20
+	else if (s == "chacha20-poly1305")
+		cipher = EVP_chacha20_poly1305();
+#endif
 
 // BoringSSL not implementing a lot of modes!!!
 #ifndef HAVE_BORINGSSL
@@ -140,6 +144,9 @@ void print_calgos(ostringstream &os)
 	        {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 0}, {"aes256ctr", 0},
 	        {"aes128cfb", 0}, {"aes128cbc", 1}, {"aes128gcm", 0}, {"aes128ctr", 0},
 	        {"cast5cfb", 0}, {"cast5cbc", 0},
+#ifdef CHACHA20
+		{"chacha20-poly1305", 0},
+#endif
 	        {"null", 0}
 	};
 
@@ -159,6 +166,7 @@ bool is_valid_calgo(const string &s)
 	        {"aes256cfb", 1}, {"aes256cbc", 1}, {"aes256gcm", 1}, {"aes256ctr", 1},
 	        {"aes128cfb", 1}, {"aes128cbc", 1}, {"aes128gcm", 1}, {"aes128ctr", 1},
 	        {"cast5cfb", 1}, {"cast5cbc", 1},
+		{"chacha20-poly1305", 1},
 	        {"null", 1}
 	};
 

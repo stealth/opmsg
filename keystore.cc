@@ -40,6 +40,7 @@ extern "C" {
 #include <openssl/rand.h>
 }
 
+#include "missing.h"
 #include "marker.h"
 #include "deleters.h"
 #include "keystore.h"
@@ -75,6 +76,9 @@ static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 {
 	result = "";
 
+	if (!bn)
+		return -1;
+
 	unsigned char h[EVP_MAX_MD_SIZE];
 	unsigned int hlen = 0;
 	memset(h, 0, sizeof(h));
@@ -87,7 +91,7 @@ static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 		return -1;
 	BN_bn2bin(bn, bin.get());
 
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
@@ -128,7 +132,7 @@ static int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result
 	// one single newline after we truncated anything after end-marker which does not contain \n
 	s += "\n";
 
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
@@ -407,9 +411,9 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		if (!evp_pub.get())
 			return build_error("add_persona::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
 
-		if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_EC)
+		if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_EC)
 			type1 = marker::ec;
-		else if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_RSA)
+		else if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_RSA)
 			type1 = marker::rsa;
 		else
 			return build_error("add_persona: Unknown persona type.", nullptr);
@@ -432,9 +436,9 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		if (!evp_priv.get())
 			return build_error("add_persona::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
 
-		if (EVP_PKEY_type(evp_priv->type) == EVP_PKEY_EC)
+		if (EVP_PKEY_base_id(evp_priv.get()) == EVP_PKEY_EC)
 			type2 = marker::ec;
-		else if (EVP_PKEY_type(evp_priv->type) == EVP_PKEY_RSA)
+		else if (EVP_PKEY_base_id(evp_priv.get()) == EVP_PKEY_RSA)
 			type2 = marker::rsa;
 		else
 			return build_error("add_persona: Unknown persona type.", nullptr);
@@ -1037,7 +1041,9 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	pub = "";
 	priv = "";
 
-	if (bn2hexhash(md, dh->pub_key, hex) < 0)
+	BIGNUM *pub_key = nullptr;
+	DH_get0_key(dh.get(), &pub_key, nullptr);
+	if (bn2hexhash(md, pub_key, hex) < 0)
 		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", -1);
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
@@ -1107,11 +1113,13 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 	// DH keys are hashed differently than EC(DH) keys, as DH pubkey consists of a single
 	// BN, ECDH consists of a pair of BNs (EC point)
 	string hex = "";
-	if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_DH) {
+	if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_DH) {
 		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
-		if (!dh.get() || bn2hexhash(md, dh->pub_key, hex) < 0)
+		BIGNUM *pub_key = nullptr;
+		DH_get0_key(dh.get(), &pub_key, nullptr);
+		if (!dh.get() || bn2hexhash(md, pub_key, hex) < 0)
 			return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", nullptr);
-	} else if (EVP_PKEY_type(evp_pub->type) == EVP_PKEY_EC) {
+	} else if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_EC) {
 		if (normalize_and_hexhash(md, pub_pem, hex) < 0)
 			return build_error("add_dh_key:: Error hashing ECDH pubkey.", nullptr);;
 	} else

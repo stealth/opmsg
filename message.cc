@@ -37,6 +37,7 @@ extern "C" {
 #include <openssl/rand.h>
 #include <openssl/evp.h>
 #include <openssl/rsa.h>
+#include <openssl/bn.h>
 }
 
 #include "missing.h"
@@ -59,7 +60,7 @@ static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const str
 		return -1;
 	memset(key, 0xff, OPMSG_MAX_KEY_LENGTH);
 
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_destroy);
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), EVP_sha512(), nullptr) != 1)
@@ -98,15 +99,12 @@ static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_K
 int message::sign(const string &msg, persona *src_persona, string &result)
 {
 	size_t siglen = 0;
-	EVP_MD_CTX md_ctx;
 	RSA *rsa = nullptr;
 
 	result = "";
 
 	if (!src_persona->can_sign())
 		return build_error("sign:: Persona has no pkey.", -1);
-
-	EVP_MD_CTX_init(&md_ctx);
 
 	// do not take ownership
 	EVP_PKEY *evp = src_persona->get_pkey()->priv;
@@ -117,17 +115,19 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 		rsa = nullptr;
 	}
 
-	if (EVP_DigestSignInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp) != 1)
-		return build_error("sign::EVP_DigestSignInit", -1);
-	if (EVP_DigestSignUpdate(&md_ctx, msg.c_str(), msg.size()) != 1)
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
+	if (!md_ctx.get())
+		return build_error("sign::EVP_MD_CTX_create:", -1);
+	if (EVP_DigestSignInit(md_ctx.get(), nullptr, algo2md(shash), nullptr, evp) != 1)
+		return build_error("sign::EVP_DigestSignInit:", -1);
+	if (EVP_DigestSignUpdate(md_ctx.get(), msg.c_str(), msg.size()) != 1)
 		return build_error("sign::EVP_DigestSignUpdate:", -1);
-	if (EVP_DigestSignFinal(&md_ctx, nullptr, &siglen) != 1)
-		return build_error("sign:: EVP_DigestSignFinal: Message signing failed", -1);
+	if (EVP_DigestSignFinal(md_ctx.get(), nullptr, &siglen) != 1)
+		return build_error("sign::EVP_DigestSignFinal: Message signing failed", -1);
 
 	unique_ptr<unsigned char[]> sig(new (nothrow) unsigned char[siglen]);
-	if (!sig.get() || EVP_DigestSignFinal(&md_ctx, sig.get(), &siglen) != 1)
+	if (!sig.get() || EVP_DigestSignFinal(md_ctx.get(), sig.get(), &siglen) != 1)
 		return build_error("sign:: EVP_DigestSignFinal: Message signing failed", -1);
-	EVP_MD_CTX_cleanup(&md_ctx);
 
 	string s = "";
 	b64_encode(reinterpret_cast<char *>(sig.get()), siglen, s);
@@ -150,7 +150,6 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	unsigned char iv[OPMSG_MAX_IV_LENGTH], iv_kdf[OPMSG_MAX_KEY_LENGTH];
 	char aad_tag[16];
 	RSA *rsa = nullptr;
-	EVP_CIPHER_CTX c_ctx;
 	// an ECDH or DH key
 	PKEYbox *ec_dh = nullptr;
 	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
@@ -226,7 +225,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return 1;
 	}
 
-	bool has_aad = (calgo.find("gcm") != string::npos);
+	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
 
 	// append public (EC)DH keys
 	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end(); ++it) {
@@ -241,7 +240,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (!secret.get())
 		return build_error("encrypt: OOM", -1);
 	outmsg += marker::kex_begin;
-	if (ec_dh && (EVP_PKEY_type(ec_dh->pub->type) == EVP_PKEY_DH)) {
+	if (ec_dh && (EVP_PKEY_base_id(ec_dh->pub) == EVP_PKEY_DH)) {
+		BIGNUM *his_pub_key = nullptr, *my_pub_key = nullptr;
 		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh->pub), DH_free);
 		if (!dh.get())
 			return build_error("encrypt: OOM", -1);
@@ -251,15 +251,17 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		// re-calculate size for secret in the DH case; it differs
 		slen = DH_size(mydh.get());
 		secret.reset(new (nothrow) unsigned char[slen]);
-		if (!secret.get() || DH_compute_key(secret.get(), dh->pub_key, mydh.get()) != slen)
+		DH_get0_key(dh.get(), &his_pub_key, nullptr);
+		if (!secret.get() || DH_compute_key(secret.get(), his_pub_key, mydh.get()) != slen)
 			return build_error("encrypt::DH_compute_key: Cannot compute DH key ", -1);
 
-		int binlen = BN_num_bytes(mydh->pub_key);
+		DH_get0_key(mydh.get(), &my_pub_key, nullptr);
+		int binlen = BN_num_bytes(my_pub_key);
 		unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
-		if (!bin.get() || BN_bn2bin(mydh->pub_key, bin.get()) != binlen)
+		if (!bin.get() || BN_bn2bin(my_pub_key, bin.get()) != binlen)
 			return build_error("encrypt::BN_bn2bin: Cannot convert DH key ", -1);
 		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
-	} else if (ec_dh && (EVP_PKEY_type(ec_dh->pub->type) == EVP_PKEY_EC)) {
+	} else if (ec_dh && (EVP_PKEY_base_id(ec_dh->pub) == EVP_PKEY_EC)) {
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh->pub, nullptr), EVP_PKEY_CTX_free);
 		if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
 			return build_error("encrypt::EVP_PKEY_keygen_init:", -1);
@@ -338,17 +340,19 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];
 	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("encrypt: Error deriving key: ", -1);
-	EVP_CIPHER_CTX_init(&c_ctx);
-	if (EVP_EncryptInit_ex(&c_ctx, algo2cipher(calgo), nullptr, key, iv) != 1)
+	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+	if (!c_ctx.get())
+		return build_error("encrypt::EVP_CIPHER_CTX_new: ", -1);
+	if (EVP_EncryptInit_ex(c_ctx.get(), algo2cipher(calgo), nullptr, key, iv) != 1)
 		return build_error("encrypt::EVP_EncryptInit_ex: ", -1);
 
 	// GCM ciphers need special treatment, the persona src id is used as AAD
 	if (has_aad) {
 		int aadlen = 0;
-		if (EVP_EncryptUpdate(&c_ctx, nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
+		if (EVP_EncryptUpdate(c_ctx.get(), nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
 			return build_error("encrypt::EVP_EncryptUpdate (AAD):", -1);
 	}
-	EVP_CIPHER_CTX_set_padding(&c_ctx, 1);
+	EVP_CIPHER_CTX_set_padding(c_ctx.get(), 1);
 
 	string b64_enc = "";
 	const size_t blen = 8000000*3;
@@ -363,17 +367,17 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			n = rawsize - idx;
 		else
 			n = blen;
-		if (EVP_EncryptUpdate(&c_ctx, outbuf.get(), &outlen, (unsigned char *)(raw.c_str() + idx), n) != 1)
+		if (EVP_EncryptUpdate(c_ctx.get(), outbuf.get(), &outlen, (unsigned char *)(raw.c_str() + idx), n) != 1)
 			return build_error("encrypt::EVP_EncryptUpdate:", -1);
 		idx += n;
 		// if last chunk, also add padding from block cipher
 		if (idx == rawsize) {
 			int padlen = 0;
-			if (EVP_EncryptFinal_ex(&c_ctx, outbuf.get() + outlen, &padlen) != 1)
+			if (EVP_EncryptFinal_ex(c_ctx.get(), outbuf.get() + outlen, &padlen) != 1)
 				return build_error("encrypt::EVP_EncryptFinal_ex:", -1);
 			outlen += padlen;
 			if (has_aad) {
-				if (EVP_CIPHER_CTX_ctrl(&c_ctx, EVP_CTRL_GCM_GET_TAG, sizeof(aad_tag), aad_tag) != 1)
+				if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_GET_TAG, sizeof(aad_tag), aad_tag) != 1)
 					return build_error("encrypt::EVP_CIPHER_CTX_ctrl:", -1);
 				b64_encode(aad_tag, sizeof(aad_tag), b64_aad_tag);
 				b64_aad_tag.insert(0, marker::aad_tag);
@@ -391,7 +395,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		b64_enc.clear();
 	}
 
-	EVP_CIPHER_CTX_cleanup(&c_ctx);
+	c_ctx.reset();
 	raw.clear();
 
 	if (b64_aad_tag.size() > 0)
@@ -419,8 +423,6 @@ int message::decrypt(string &raw)
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
 	PKEYbox *ec_dh = nullptr;
 	RSA *rsa = nullptr;
-	EVP_MD_CTX md_ctx;
-	EVP_CIPHER_CTX c_ctx;
 	unsigned char iv[OPMSG_MAX_IV_LENGTH];
 	char aad_tag[16];
 	unsigned int i = 0;
@@ -484,7 +486,7 @@ int message::decrypt(string &raw)
 	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
 		return build_error("decrypt: Not in OPMSGv1/2 format (8). Invalid algo name. Need to update opmsg?", -1);
 
-	bool has_aad = (calgo.find("gcm") != string::npos);
+	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
 
 	// IV are 24byte encoded as b64 == 32byte
 	b64_decode(reinterpret_cast<char *>(b[4]), 32, iv_kdf);
@@ -523,19 +525,21 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, 0);
 
 	// check sig
-	EVP_MD_CTX_init(&md_ctx);
+	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
+	if (!md_ctx.get())
+		return build_error("decrypt::EVP_MD_CTX_create:", -1);
 	EVP_PKEY *evp = src_persona->get_pkey()->pub;
-	if (EVP_DigestVerifyInit(&md_ctx, nullptr, algo2md(shash), nullptr, evp) != 1)
+	if (EVP_DigestVerifyInit(md_ctx.get(), nullptr, algo2md(shash), nullptr, evp) != 1)
 		return build_error("decrypt::EVP_DigestVerifyInit:", -1);
-	if (EVP_DigestVerifyUpdate(&md_ctx, raw.c_str(), raw.size()) != 1)
+	if (EVP_DigestVerifyUpdate(md_ctx.get(), raw.c_str(), raw.size()) != 1)
 		return build_error("decrypt::EVP_DigestVerifyUpdate:", -1);
 	string sig = "";
 	b64_decode(b64sig, sig);
 	errno = 0;	// Dont consider errno on wrong message signature error message
-	if (EVP_DigestVerifyFinal(&md_ctx, (unsigned char *)(sig.c_str()), sig.size()) != 1)
+	if (EVP_DigestVerifyFinal(md_ctx.get(), (unsigned char *)(sig.c_str()), sig.size()) != 1)
 		return build_error("decrypt::EVP_DigestVerifyFinal: Message verification FAILED.", -1);
 
-	EVP_MD_CTX_cleanup(&md_ctx);
+	md_ctx.reset();
 	evp = nullptr;
 
 	//
@@ -669,11 +673,11 @@ int message::decrypt(string &raw)
 			return build_error("decrypt: OOM", -1);
 
 		// BN is a BN pubkey in DH case...
-		if (EVP_PKEY_type(ec_dh->priv->type) == EVP_PKEY_DH) {
+		if (EVP_PKEY_base_id(ec_dh->priv) == EVP_PKEY_DH) {
 			DH *dh = DH_new();
 			if (!dh)
 				return build_error("decrypt: OOM", -1);
-			dh->pub_key = bn.release();
+			DH_set0_key(dh, bn.release(), nullptr);
 			EVP_PKEY_assign_DH(peer_key.get(), dh);
 		// ...and a compressed EC_POINT pubkey in ECDH case
 		} else {
@@ -719,19 +723,21 @@ int message::decrypt(string &raw)
 	// nuke anything until we get just encrypted (b64) payload
 	raw.erase(0, pos + marker::opmsg_databegin.size());
 
-	EVP_CIPHER_CTX_init(&c_ctx);
-	if (EVP_DecryptInit_ex(&c_ctx, algo2cipher(calgo), nullptr, key, iv) != 1)
+	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
+	if (!c_ctx.get())
+		return build_error("decrypt::EVP_CIPHER_CTX_new:", -1);
+	if (EVP_DecryptInit_ex(c_ctx.get(), algo2cipher(calgo), nullptr, key, iv) != 1)
 		return build_error("decrypt::EVP_DecryptInit_ex: ", -1);
 
 	if (has_aad) {
 		int aadlen = 0;
-		if (EVP_CIPHER_CTX_ctrl(&c_ctx, EVP_CTRL_GCM_SET_TAG, sizeof(aad_tag), aad_tag) != 1)
+		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_SET_TAG, sizeof(aad_tag), aad_tag) != 1)
 			return build_error("decrypt::EVP_CIPHER_CTX_ctrl: ", -1);
-		if (EVP_DecryptUpdate(&c_ctx, nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
+		if (EVP_DecryptUpdate(c_ctx.get(), nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
 			return build_error("decrypt::EVP_DecryptUpdate (AAD):", -1);
 	}
 
-	EVP_CIPHER_CTX_set_padding(&c_ctx, 1);
+	EVP_CIPHER_CTX_set_padding(c_ctx.get(), 1);
 
 	raw.erase(remove(raw.begin(), raw.end(), '\n'), raw.end());
 
@@ -753,20 +759,19 @@ int message::decrypt(string &raw)
 		enc = "";
 		b64_decode(raw.c_str() + idx, n, enc);
 		if (!enc.size() || enc.size() > n)
-			break;
+			return build_error("decrypt::b64_decode: Invalid Base64 input.", -1);
 		idx += n;
-		if (EVP_DecryptUpdate(&c_ctx, outbuf.get(), &outlen, (unsigned char *)enc.c_str(), enc.size()) != 1)
+		if (EVP_DecryptUpdate(c_ctx.get(), outbuf.get(), &outlen, (unsigned char *)enc.c_str(), enc.size()) != 1)
 			return build_error("decrypt::EVP_DecryptUpdate:", -1);
 		if (idx == rawsize) {
 			int padlen = 0;
-			if (EVP_DecryptFinal_ex(&c_ctx, outbuf.get() + outlen, &padlen) != 1)
+			if (EVP_DecryptFinal_ex(c_ctx.get(), outbuf.get() + outlen, &padlen) != 1)
 				return build_error("decrypt::EVP_DecryptFinal_ex:", -1);
 			outlen += padlen;
 		}
 		plaintext += string(reinterpret_cast<char *>(outbuf.get()), outlen);
 	}
 
-	EVP_CIPHER_CTX_cleanup(&c_ctx);
 	raw = plaintext;
 	plaintext.clear();
 

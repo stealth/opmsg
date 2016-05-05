@@ -25,7 +25,9 @@ extern "C" {
 #include <openssl/evp.h>
 #include <openssl/bn.h>
 #include <openssl/ec.h>
+#include <openssl/dh.h>
 }
+
 
 #include <iostream>
 namespace opmsg {
@@ -81,7 +83,35 @@ EC_POINT *EC_POINT_bn2point(const EC_GROUP *grp, const BIGNUM *bn, EC_POINT *pnt
 	return ret;
 }
 
+
+int EVP_PKEY_base_id(const EVP_PKEY *pkey)
+{
+	return EVP_PKEY_type(pkey->type);
+}
 #endif
+
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+void DH_get0_key(const DH *dh, BIGNUM **pub_key, BIGNUM **priv_key)
+{
+	if (pub_key)
+		*pub_key = dh->pub_key;
+	if (priv_key)
+		*priv_key = dh->priv_key;
+}
+#endif
+
+
+#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
+{
+	dh->pub_key = pub_key;
+	dh->priv_key = priv_key;
+	return 1;
+}
+#endif
+
+
 
 }
 
