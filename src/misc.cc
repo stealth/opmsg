@@ -242,6 +242,7 @@ string build_error(const string &msg)
 		ERR_load_crypto_strings();
 		err += ":";
 		err += ERR_error_string(e, nullptr);
+		ERR_clear_error();
 	} else if (errno) {
 		err += ":";
 		err += strerror(errno);

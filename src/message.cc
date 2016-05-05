@@ -766,7 +766,7 @@ int message::decrypt(string &raw)
 		if (idx == rawsize) {
 			int padlen = 0;
 			if (EVP_DecryptFinal_ex(c_ctx.get(), outbuf.get() + outlen, &padlen) != 1)
-				return build_error("decrypt::EVP_DecryptFinal_ex:", -1);
+				return build_error("decrypt::EVP_DecryptFinal_ex: AAD check failed?", -1);
 			outlen += padlen;
 		}
 		plaintext += string(reinterpret_cast<char *>(outbuf.get()), outlen);
