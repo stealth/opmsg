@@ -494,7 +494,7 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Error decoding IV value.", -1);
 	memcpy(iv, iv_kdf.c_str(), sizeof(iv));
 
-	// get AAD tag if any (only required by GCM mode ciphers)
+	// get AAD tag if any (only required by GCM mode ciphers and poly1305)
 	if (has_aad && (pos = raw.find(marker::aad_tag)) != string::npos) {
 		pos += marker::aad_tag.size();
 		if ((nl = raw.find("\n", pos)) == string::npos) {

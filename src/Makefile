@@ -33,6 +33,7 @@ INC=
 #DEFS+=-DHAVE_BORINGSSL
 
 
+# Enable chacha20-poly1305 if avail
 #DEFS+=-DCHACHA20
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
