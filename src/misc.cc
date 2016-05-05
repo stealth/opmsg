@@ -166,7 +166,9 @@ bool is_valid_calgo(const string &s)
 	        {"aes256cfb", 1}, {"aes256cbc", 1}, {"aes256gcm", 1}, {"aes256ctr", 1},
 	        {"aes128cfb", 1}, {"aes128cbc", 1}, {"aes128gcm", 1}, {"aes128ctr", 1},
 	        {"cast5cfb", 1}, {"cast5cbc", 1},
+#ifdef CHACHA20
 		{"chacha20-poly1305", 1},
+#endif
 	        {"null", 1}
 	};
 
