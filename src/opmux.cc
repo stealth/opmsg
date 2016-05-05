@@ -43,6 +43,8 @@
 using namespace std;
 using namespace opmsg;
 
+extern char **environ;
+
 
 // Only the first 64k to distinguish between opmsg and gpg
 int read_msg(const string &p, string &tmp_path, string &msg)
@@ -109,14 +111,14 @@ int read_msg(const string &p, string &tmp_path, string &msg)
 
 
 // externally invoke the outdated crypto framework
-void gpg(char **argv, char **envp)
+void gpg(char **argv)
 {
 	char gpg[] = "gpg", gpg2[] = "gpg2";
 
 	argv[0] = gpg2;
-	execvpe(gpg2, argv, envp);
+	execvp(gpg2, argv);
 	argv[0] = gpg;
-	execvpe(gpg, argv, envp);
+	execvp(gpg, argv);
 
 	exit(1);
 }
@@ -252,7 +254,7 @@ int main(int argc, char **argv, char **envp)
 				status_fd = 2;
 			break;
 		case 'v':
-			gpg(argv, envp);
+			gpg(argv);
 			break;	// neverreached
 		default:
 			// ignore other options, and only pass it along
@@ -273,22 +275,22 @@ int main(int argc, char **argv, char **envp)
 	if (mode == MODE_LIST) {
 		if (optind < argc) {
 			if (has_id(argv[optind]).size() == 0)
-				gpg(oargv, envp);
+				gpg(oargv);
 
 			opmsg_list[3] = name;
 			opmsg_list[4] = strdup(argv[optind]);
-			execvpe(opmsg, opmsg_list, envp);
+			execvp(opmsg, opmsg_list);
 			exit(1);
 		}
 
 		if ((pid = fork()) == 0) {
-			execvpe(opmsg, opmsg_list, envp);
+			execvp(opmsg, opmsg_list);
 			exit(1);
 		} else if (pid < 0)
 			exit(1);
 
 		waitpid(pid, nullptr, 0);
-		gpg(oargv, envp);
+		gpg(oargv);
 		exit(1);
 	}
 
@@ -296,7 +298,7 @@ int main(int argc, char **argv, char **envp)
 		infile = argv[optind];
 
 	if ((mode != MODE_ENCRYPT && mode != MODE_DECRYPT) || (mode == MODE_ENCRYPT && rcpt.size() == 0))
-		gpg(oargv, envp);
+		gpg(oargv);
 
 	if (mode == MODE_DECRYPT) {
 		// peek into input file
@@ -317,10 +319,10 @@ int main(int argc, char **argv, char **envp)
 					opmsg_d[++idx] = out;
 					opmsg_d[++idx] = strdup(outfile.c_str());
 				}
-				execvpe(opmsg, opmsg_d, envp);
+				execvp(opmsg, opmsg_d);
 				exit(1);
 			} else
-				gpg(oargv, envp);
+				gpg(oargv);
 		} else if (pid < 0)
 			return -1;
 
@@ -355,11 +357,11 @@ int main(int argc, char **argv, char **envp)
 			opmsg_e[++idx] = out;
 			opmsg_e[++idx] = strdup(outfile.c_str());
 		}
-		execvpe(opmsg, opmsg_e, envp);
+		execvp(opmsg, opmsg_e);
 		return -1;
 	}
 
-	gpg(oargv, envp);
+	gpg(oargv);
 	return -1;
 }
 

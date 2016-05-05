@@ -91,7 +91,7 @@ int EVP_PKEY_base_id(const EVP_PKEY *pkey)
 #endif
 
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
 void DH_get0_key(const DH *dh, BIGNUM **pub_key, BIGNUM **priv_key)
 {
 	if (pub_key)
@@ -102,7 +102,7 @@ void DH_get0_key(const DH *dh, BIGNUM **pub_key, BIGNUM **priv_key)
 #endif
 
 
-#if OPENSSL_VERSION_NUMBER < 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
 int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
 {
 	dh->pub_key = pub_key;
