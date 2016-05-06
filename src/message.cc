@@ -78,7 +78,8 @@ static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const str
 			return -1;
 		if (EVP_DigestUpdate(md_ctx.get(), s2.c_str(), s2.size()) != 1)
 			return -1;
-	}
+	} else
+		return -1;
 
 	if (EVP_DigestFinal_ex(md_ctx.get(), digest, &hlen) != 1)
 		return -1;

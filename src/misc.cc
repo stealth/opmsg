@@ -253,5 +253,15 @@ string build_error(const string &msg)
 }
 
 
+// for debugging/inspection
+void hex_dump(const char *buf, size_t blen)
+{
+	fprintf(stderr, "\n");
+	for (size_t i = 0; i < blen; ++i)
+		fprintf(stderr, "%02x ", buf[i] & 0xff);
+	fprintf(stderr, "\n");
+}
+
+
 } // namespace
 

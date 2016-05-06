@@ -62,6 +62,8 @@ void unlockf(FILE *);
 
 void unlockf(int);
 
+void hex_dump(const char *, size_t);
+
 extern const std::string prefix;
 
 }
