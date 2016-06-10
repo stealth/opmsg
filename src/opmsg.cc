@@ -625,7 +625,7 @@ int do_newpersona(const string &name, const string &type)
 	estr<<"\n\n"<<prefix<<"Successfully generated persona with id\n"<<prefix<<idformat(p->get_id())<<endl;
 	if (config::deniable) {
 		if (p->link(p->get_id()) < 0)
-			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl; eflush();
+			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl;
 		estr<<prefix<<"You created a deniable persona.\n"<<prefix<<"SEND BOTH KEYS ONLY ACROSS EXISTING _SECURE_ OPMSG CHANNEL.\n";
 	}
 
