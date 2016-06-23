@@ -42,16 +42,28 @@ LD=c++
 LDFLAGS=
 LIBS+=-lcrypto
 
-all: opmsg opmux
+
+all: opmsg
+
+contrib: opmux opcoin
 
 opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o missing.o
 	$(LD) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
 
+opcoin: keystore.o opcoin.o config.o deleters.o base58.o misc.o marker.o deleters.o missing.o
+	$(LD) keystore.o opcoin.o config.o base58.o misc.o marker.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
+
 opmux: keystore.o opmux.o misc.o marker.o config.o deleters.o missing.o
 	$(LD) keystore.o opmux.o misc.o marker.o config.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
 
-opmux.o: opmux.cc
-	$(CXX) $(CXXFLAGS) -c $<
+opmux.o: contrib/opmux.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
+
+opcoin.o: contrib/opcoin.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
+
+base58.o: contrib/base58.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
 
 opmsg.o: opmsg.cc
 	$(CXX) $(CXXFLAGS) -c $<

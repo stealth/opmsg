@@ -107,7 +107,7 @@ static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 
 
 // normalize and hash a PEM pubkey
-static int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result)
+int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result)
 {
 	result = "";
 

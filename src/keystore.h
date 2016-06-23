@@ -389,6 +389,8 @@ public:
 	}
 };
 
+int normalize_and_hexhash(const EVP_MD *, std::string &s, std::string &);
+
 } // namespace
 
 #endif

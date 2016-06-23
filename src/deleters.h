@@ -48,6 +48,8 @@ extern "C" typedef int (*BIO_del)(BIO *);
 
 extern "C" typedef void (*BIGNUM_del)(BIGNUM *);
 
+extern "C" typedef void (*BN_CTX_del)(BN_CTX *);
+
 extern "C" typedef void (*BN_GENCB_del)(BN_GENCB *);
 
 extern "C" typedef void (*EC_GROUP_del)(EC_GROUP *);
