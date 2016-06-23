@@ -77,7 +77,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.70 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.71 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -258,7 +258,6 @@ int do_sign()
 {
 	string hexhash = "";
 
-	unique_ptr<persona> my_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 	persona *my_p = nullptr;
 
@@ -267,29 +266,19 @@ int do_sign()
 		return -1;
 	}
 
-	if (config::my_id.size() == 16) {
-		if (ks->load() < 0) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		if (!(my_p = ks->find_persona(config::my_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-	} else {
-		my_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
-		if (!(my_p = my_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (my_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<my_p->why()<<endl; eflush();
-			return -1;
-		}
-		if (!my_p->can_sign()) {
-			estr<<prefix<<"ERROR: Missing keys for signing!\n"; eflush();
-			return -1;
-		}
+	if (ks->load(config::my_id) < 0) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	if (!(my_p = ks->find_persona(config::my_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	if (!my_p->can_sign()) {
+		estr<<prefix<<"ERROR: Missing keys for signing!\n"; eflush();
+		return -1;
 	}
 
 	if (file2hexhash(config::infile, hexhash) < 0) {
@@ -323,7 +312,6 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	int r1 = 0, r2 = 0;
 	bool linked_to_myself = 0;
 
-	unique_ptr<persona> dst_persona(nullptr), src_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 	persona *dst_p = nullptr, *src_p = nullptr;
 	string kex_id = marker::rsa_kex_id, text = s;
@@ -335,60 +323,39 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 
 	string src_id = config::my_id;
 
-	if (dst_id.size() == 16 || src_id.size() == 16) {
-		if (ks->load() < 0) {
+	if (ks->load(dst_id) < 0) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	// do not use unique_ptr here, we dont have ownership
+	if (!(dst_p = ks->find_persona(dst_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	// any default src linked to this target? override!
+	if (dst_p->linked_src().size() > 0) {
+		src_id = dst_p->linked_src();
+
+		// check if that persona was linked to itself. That means OTR-like sharing
+		// of the EC/RSA persona secret and Kex-id's chosen for encryption must not have
+		// the secret part on our keysore since peer who is decrypting, would be missing it.
+		// Only Kex-id's with missing secret part have the secret part at the peer side.
+		if (src_id == dst_p->get_id())
+			linked_to_myself = 1;
+	}
+
+	if (!linked_to_myself) {
+		if (ks->load(src_id) < 0) {
 			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 			return -1;
 		}
-		// do not use unique_ptr here, we dont have ownership
-		if (!(dst_p = ks->find_persona(dst_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		// any default src linked to this target? override!
-		if (dst_p->linked_src().size() > 0) {
-			src_id = dst_p->linked_src();
+	}
 
-			// check if that persona was linked to itself. That means OTR-like sharing
-			// of the EC/RSA persona secret and Kex-id's chosen for encryption must not have
-			// the secret part on our keysore since peer who is decrypting, would be missing it.
-			// Only Kex-id's with missing secret part have the secret part at the peer side.
-			if (src_id == dst_p->get_id())
-				linked_to_myself = 1;
-		}
-
-		if (!(src_p = ks->find_persona(src_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-	} else {
-		dst_persona.reset(new (nothrow) persona(config::cfgbase, dst_id));
-		if (!(dst_p = dst_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (dst_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<dst_persona->why()<<endl; eflush();
-			return -1;
-		}
-		// any default src linked to this target? override!
-		if (dst_p->linked_src().size() > 0) {
-			src_id = dst_p->linked_src();
-
-			// see above comment
-			if (src_id ==  dst_p->get_id())
-				linked_to_myself = 1;
-		}
-
-		src_persona.reset(new (nothrow) persona(config::cfgbase, src_id));
-		if (!(src_p = src_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (src_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<src_persona->why()<<endl; eflush();
-			return -1;
-		}
+	if (!(src_p = ks->find_persona(src_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
 	}
 
 	if (!dst_p->can_encrypt()) {
@@ -396,7 +363,7 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		return -1;
 	}
 	if (!src_p->can_sign()) {
-		estr<<prefix<<"ERROR: Missing signing key for ourselfs.\n"; eflush();
+		estr<<prefix<<"ERROR: Missing signing key for ourselfs ("<<src_id<<").\n"; eflush();
 		return -1;
 	}
 
@@ -664,7 +631,6 @@ int do_new_ec_persona(const string &name)
 
 int do_newdhparams()
 {
-	unique_ptr<persona> my_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 	persona *my_p = nullptr;
 
@@ -673,29 +639,19 @@ int do_newdhparams()
 		return -1;
 	}
 
-	if (config::my_id.size() == 16) {
-		if (ks->load() < 0) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		if (!(my_p = ks->find_persona(config::my_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-	} else {
-		my_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
-		if (!(my_p = my_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (my_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<my_p->why()<<endl; eflush();
-			return -1;
-		}
-		if (!my_p->can_sign()) {
-			estr<<prefix<<"ERROR: Missing keys for signing.\n"; eflush();
-			return -1;
-		}
+	if (ks->load(config::my_id) < 0) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	if (!(my_p = ks->find_persona(config::my_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+
+	if (!my_p->can_sign() || my_p->get_type() != marker::rsa) {
+		estr<<prefix<<"ERROR: Wrong persona for DH param generation (not owning privkey or not RSA).\n"; eflush();
+		return -1;
 	}
 
 	if (!my_p->new_dh_params()) {
@@ -816,7 +772,6 @@ int do_import(const string &name)
 int do_link(const string &dst_id)
 {
 	persona *src_p = nullptr, *dst_p = nullptr;
-	unique_ptr<persona> src_persona(nullptr), dst_persona(nullptr);
 	unique_ptr<keystore> ks(new (nothrow) keystore(config::phash, config::cfgbase));
 
 	if (!ks.get()) {
@@ -826,42 +781,22 @@ int do_link(const string &dst_id)
 
 	string link_id = config::my_id;
 
-	if (dst_id.size() == 16 || config::my_id.size() == 16) {
-		if (ks->load() < 0) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		// do not use unique_ptr here, we dont have ownership
-		if (!(dst_p = ks->find_persona(dst_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		if (!(src_p = ks->find_persona(config::my_id))) {
-			estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
-			return -1;
-		}
-		// take the long form
-		link_id = src_p->get_id();
-	} else {
-		dst_persona.reset(new (nothrow) persona(config::cfgbase, dst_id));
-		if (!(dst_p = dst_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (dst_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<dst_persona->why()<<endl; eflush();
-			return -1;
-		}
-		src_persona.reset(new (nothrow) persona(config::cfgbase, config::my_id));
-		if (!(src_p = src_persona.get())) {
-			estr<<prefix<<"ERROR: OOM\n"; eflush();
-			return -1;
-		}
-		if (src_p->load() < 0) {
-			estr<<prefix<<"ERROR: "<<src_persona->why()<<endl; eflush();
-			return -1;
-		}
+	if (ks->load(dst_id) < 0 || ks->load(config::my_id) < 0) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
 	}
+
+	// do not use unique_ptr here, we dont have ownership
+	if (!(dst_p = ks->find_persona(dst_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+	if (!(src_p = ks->find_persona(config::my_id))) {
+		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
+		return -1;
+	}
+	// take the long form
+	link_id = src_p->get_id();
 
 	if (!src_p->can_sign()) {
 		estr<<prefix<<"ERROR: "<<config::my_id<<" cannot be set as default-src because it lacks a private key.\n"; eflush();

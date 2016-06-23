@@ -167,10 +167,12 @@ class persona {
 		if (ERR_get_error()) {
 			err += ":";
 			err += ERR_error_string(ERR_get_error(), nullptr);
+			ERR_clear_error();
 		} else if (errno) {
 			err += ":";
 			err += strerror(errno);
 		}
+		errno = 0;
 		return r;
 	}
 
@@ -336,6 +338,7 @@ class keystore {
 			err += ":";
 			err += strerror(errno);
 		}
+		errno = 0;
 		return r;
 	}
 
@@ -359,9 +362,7 @@ public:
 		return md;
 	}
 
-	int load(const std::string &);
-
-	int load();
+	int load(const std::string &id = "");
 
 	int gen_rsa(std::string &pub, std::string &priv);
 

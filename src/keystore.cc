@@ -165,21 +165,27 @@ static int key_cb(int a1, int a2, BN_GENCB *a3)
 
 int keystore::load(const string &hex)
 {
-	if (!is_hex_hash(hex))
+	if (!is_hex_hash(hex) && hex.size() > 0)
 		return build_error("keystore::load: Invalid hex id.", -1);
-	unique_ptr<persona> p(new (nothrow) persona(cfgbase, hex));
-	if (!p.get())
-		return build_error("keystore::load:: OOM", -1);
-	p->load();
-	personas[hex] = p.release();
-	return 0;
-}
 
+	// assume --long form which may be used directly to access subdirs and which
+	// tells us to just load a single persona of this id
+	if (hex.size() > 16) {
+		// was already loaded? ->load() may be called multiple times
+		if (personas.count(hex) > 0)
+			return 0;
 
-int keystore::load()
-{
+		unique_ptr<persona> p(new (nothrow) persona(cfgbase, hex));
+		if (!p.get())
+			return build_error("keystore::load:: OOM", -1);
+		if (p->load() < 0)
+			return build_error("keystore::load::" + string(p->why()), -1);
+		personas[hex] = p.release();
+		return 0;
+	}
+
 	persona *p = nullptr;
-	string hex = "";
+	string dhex = "";
 
 	DIR *d = opendir(cfgbase.c_str());
 	if (!d)
@@ -192,10 +198,18 @@ int keystore::load()
 			break;
 		if (!result)
 			break;
-		hex = result->d_name;
-		if (!is_hex_hash(hex))
+		dhex = result->d_name;
+		if (!is_hex_hash(dhex))
 			continue;
-		p = new (nothrow) persona(cfgbase, hex);
+
+		// short id form as a filter given?
+		if (hex.size() == 16 && dhex.find(hex) != 0)
+			continue;
+
+		if (personas.count(dhex) > 0)
+			continue;
+
+		p = new (nothrow) persona(cfgbase, dhex);
 		if (!p)
 			break;
 
@@ -204,7 +218,7 @@ int keystore::load()
 			delete p;
 			continue;
 		}
-		personas[hex] = p;
+		personas[dhex] = p;
 	}
 	closedir(d);
 

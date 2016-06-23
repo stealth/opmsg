@@ -389,7 +389,7 @@ void usage(const string &p)
 using namespace ns_opcoin;
 
 
-const string banner = "\nopcoin: version=1.70 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopcoin: version=1.71 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 
 int main(int argc, char **argv)

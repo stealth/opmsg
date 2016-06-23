@@ -576,7 +576,7 @@ int message::decrypt(string &raw)
 	dst_id_hex = s;
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
-	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || !dst_persona->can_decrypt())
+	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || (!dst_persona->can_decrypt() && calgo != "null"))
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
 
 
