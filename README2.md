@@ -4,12 +4,14 @@ opmsg contrib
 This document covers `opcoin`. For `opmux` please refer to the MUA
 chapter inside the main README.md.
 
+This is experimental stuff for experts. If you just want to send/receive encrypted
+messages, refer to the README. opcoins are not necessary to do that.
 
 opcoin
 ------
 
 __Note: Do not use BTC addresses where you hold a lot of unspent outputs. Rather just import private
-keys from your wallet with little amount of money on it, to reduce risk of compromise. Your opmsg keys
+keys from your wallet with little amount of money on it, to reduce damage after potential compromise. Your opmsg keys
 (and so your BTC imported opcoin keys) will be stored unencrypted on disk. I am assuming you are using FDE anyways,
 to protect your keystore. So again, do not use BTC addresses which own much money. After all,
 this is an experimentel feature, driving on the bitcoin network as a web-of-trust. At best,
@@ -58,9 +60,13 @@ Again this time, the address has to be given via `--name` in order to validate y
 refering to the right BTC address.
 
 
+opcoin personas are imported using persona hash algo of sha256. Thats the same algo that is
+used by bitcoin itself.
+
+
 Thats basically it. You can now use the opcoin personas as any other personas with opmsg.
 The main idea behind it is to use the public ledger with some micro transactions as a proof
-that a certain persona holds a key (proofing it by sending you some satoshis of secret amount
+that a certain persona holds a key (proving it by sending you some satoshis of secret amount
 to your account).
 
 
