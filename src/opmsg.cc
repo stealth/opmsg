@@ -720,8 +720,10 @@ static int split_deniable_keys(string &pub, string &priv)
 
 int do_import(const string &name)
 {
-	if (config::infile == "/dev/stdin")
+	if (config::infile == "/dev/stdin") {
 		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
+		eflush();
+	}
 
 	string pub = "", priv = "";
 	if (read_msg(config::infile, pub) < 0) {
