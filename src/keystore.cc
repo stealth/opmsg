@@ -165,8 +165,10 @@ static int key_cb(int a1, int a2, BN_GENCB *a3)
 
 int keystore::load(const string &hex)
 {
-	if (!is_hex_hash(hex) && hex.size() > 0)
-		return build_error("keystore::load: Invalid hex id.", -1);
+	if (hex.size() > 0) {
+		if (!is_hex_hash(hex) || hex.size() < 16)
+			return build_error("keystore::load: Invalid hex id.", -1);
+	}
 
 	// assume --long form which may be used directly to access subdirs and which
 	// tells us to just load a single persona of this id
@@ -219,6 +221,10 @@ int keystore::load(const string &hex)
 			continue;
 		}
 		personas[dhex] = p;
+
+		// short id was given, no more loads after success
+		if (hex.size() == 16)
+			break;
 	}
 	closedir(d);
 
