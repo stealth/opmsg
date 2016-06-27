@@ -435,7 +435,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		string rfile = tmpdir + "/" + type1 + ".pub.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
-		write(fd, pub_pem.c_str(), pub_pem.size());
+		if (write(fd, pub_pem.c_str(), pub_pem.size()) < 0)
+			return build_error("add_persona::write:", nullptr);
 		close(fd);
 	}
 
@@ -463,7 +464,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		string rfile = tmpdir + "/" + type2 + ".priv.pem";
 		if ((fd = open(rfile.c_str(), O_CREAT|O_RDWR|O_EXCL, 0600)) < 0)
 			return build_error("add_persona::open:", nullptr);
-		write(fd, priv_pem.c_str(), priv_pem.size());
+		if (write(fd, priv_pem.c_str(), priv_pem.size()) < 0)
+			return build_error("add_persona::write:", nullptr);
 		close(fd);
 	}
 
@@ -562,7 +564,7 @@ map<string, PKEYbox *>::iterator persona::next_key(const map<string, PKEYbox *>:
 int persona::load_dh(const string &hex)
 {
 	size_t r = 0;
-	char buf[8192];
+	char buf[8192], *fr = nullptr;
 	bool has_pub = 0, has_priv = 0;
 
 	if (!is_hex_hash(hex))
@@ -626,9 +628,9 @@ int persona::load_dh(const string &hex)
 	if (f.get()) {
 		char s[512];
 		memset(s, 0, sizeof(s));
-		fgets(s, sizeof(s) - 1, f.get());
+		fr = fgets(s, sizeof(s) - 1, f.get());
 		size_t slen = strlen(s);
-		if (slen > 0) {
+		if (fr && slen > 0) {
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
@@ -669,7 +671,7 @@ int persona::check_type()
 int persona::load(const std::string &dh_hex)
 {
 	size_t r = 0;
-	char buf[8192];
+	char buf[8192], *fr = nullptr;
 	string dir = cfgbase + "/" + id;
 	string file = dir + "/name";
 	string hex = "";
@@ -692,10 +694,10 @@ int persona::load(const std::string &dh_hex)
 		char s[512];
 		memset(s, 0, sizeof(s));
 		rlockf(f.get());
-		fgets(s, sizeof(s) - 1, f.get());
+		fr = fgets(s, sizeof(s) - 1, f.get());
 		unlockf(f.get());
 		size_t slen = strlen(s);
-		if (slen > 0) {
+		if (fr && slen > 0) {
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
@@ -709,10 +711,10 @@ int persona::load(const std::string &dh_hex)
 		char s[512];
 		memset(s, 0, sizeof(s));
 		rlockf(f.get());
-		fgets(s, sizeof(s) - 1, f.get());
+		fr = fgets(s, sizeof(s) - 1, f.get());
 		unlockf(f.get());
 		size_t slen = strlen(s);
-		if (slen > 0) {
+		if (fr && slen > 0) {
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
@@ -1234,8 +1236,8 @@ int persona::del_dh_priv(const string &hex)
 	char buf[512];
 	memset(buf, 0, sizeof(buf));
 	for (off_t i = 0; i < st.st_size; i += sizeof(buf)) {
-		write(fd, buf, sizeof(buf));
-		sync();
+		if (write(fd, buf, sizeof(buf)) > 0)
+			sync();
 	}
 	close(fd);
 
@@ -1280,15 +1282,23 @@ int persona::link(const string &hex)
 
 	string file = cfgbase + "/" + id + "/srclink";
 
+	int saved_errno = 0;
 	int fd = open(file.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600);
 	if (fd >= 0) {
 		wlockf(fd);
-		write(fd, hex.c_str(), hex.size());
-		write(fd, "\n", 1);
+		if (write(fd, hex.c_str(), hex.size()) < 0)
+			saved_errno = errno;
+		if (write(fd, "\n", 1) < 0)
+			saved_errno = errno;
 		unlockf(fd);
 		close(fd);
 	} else
 		return build_error("link: ", -1);
+
+	if (saved_errno != 0) {
+		errno = saved_errno;
+		return build_error("link::write:", -1);
+	}
 
 	return 0;
 }
