@@ -23,11 +23,13 @@ Features:
 * support for 1:1 key bindings to auto-select source key per destination
 * adds the possibility to (re-)route messages different
   from mail address to defeat meta data collection
-* configurable well-established hash and crypto algorithms
-  and key lengths (RSA, DH, EC, AES)
+* configurable, well-established hash and crypto algorithms
+  and key lengths (RSA, DH, ECC, AES, Chacha)
 * straight forward and open key storage, basically also managable via
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
+* Key format suitable for easy use with QR-codes
+
 
 _opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto libraries.
 Building against BoringSSL is not recommended due to missing blowfish and ripemd algorithms.
@@ -92,6 +94,10 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
                                 decryption to achieve 'full' PFS
 
 ```
+
+If you want to use additional features, such as from `opmux` (opmsg/gpg auto forward) or `opcoin`
+(using bitcoin network as a web-of-trust), also type `make contrib`. Contrib tools are
+documented in README2.md.
 
 It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
 (_Solaris_, _FreeBSD_,...).
