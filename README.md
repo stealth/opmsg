@@ -51,10 +51,15 @@ generation. To disable `BN_GENCB_new`, set `HAVE_BN_GENCB_NEW` to false:
 your own _OpenSSL_, as Apple marks _OpenSSL_ as deprecated in favor of their own
 crypto libs. You may also set all these options in the `Makefile`.
 
+It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
+(_Solaris_, _FreeBSD_,...).
+
+
 ```
 $ make
 [...]
 $ cp opmsg /usr/local/bin/
+$ mkdir ~/.opmsg && touch ~/.opmsg/config
 $ opmsg
 
 opmsg: version=1.69 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg
@@ -98,9 +103,6 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
 If you want to use additional features, such as from `opmux` (opmsg/gpg auto forward) or `opcoin`
 (using bitcoin network as a web-of-trust), also type `make contrib`. Contrib tools are
 documented in README2.md.
-
-It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
-(_Solaris_, _FreeBSD_,...).
 
 Personas
 --------
@@ -146,7 +148,12 @@ the remote peer that you want to opmsg-mail with via
 opmsg --import --phash sha256 --name stealth
 ```
 
-just as hinted above.
+just as hinted above. After pasting the public key of your communication peer
+into above commandline - once it told you to do so - you will be given the persona ID,
+that consists of the hashsum (sha256 in this case) of the public key. ID's
+may be presented to you in `--short`, `--long`, or `--split` (default) form,
+and will be auto-detected in either form as you pass it to the command line.
+
 
 _opmsg_ does not rely on a web-of-trust which in fact never really
 worked. Rather, due to ubiquious messenging, its much simpler today
@@ -163,7 +170,7 @@ be mapped to you._
 By default `sha256` is used to hash the pubkey blob but you may also specify `ripemd160`
 or `sha512`. Whichever you choose, its important that your peer knows
 about it during import, because you will be referenced with this hex hash value
-in future.
+(your persona ID) in future.
 
 The private part of the keys which are stored inside `~/.opmsg`
 are NOT encrypted. It is believed that once someone gained access
@@ -407,8 +414,10 @@ unless you specify it via `-P` on the commandline or used `--link`:
 # for your peer.
 version=2
 
-# should use long format to avoid loading of whole keystore. Also see 'linking personas'
-# in README. It is recommended to use different ID for each communication peer.
+# Using the long format optimizes keystore loading, as an exact lookup takes place,
+# and  searching the keystore is avoided.
+# Also see 'linking personas' in README. It is recommended to use different ID
+# for each communication peer.
 my_id = 50973f3cfc3e0f3f1a7d4047aa6fa7645510f3b4ddc486a4b72bcacdf3aad570
 
 # default
@@ -419,6 +428,7 @@ dh_plen = 2048
 
 calgo = aes128ctr
 
+# the ID output format (default)
 idformat = split
 
 new_dh_keys = 3
