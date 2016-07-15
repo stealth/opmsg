@@ -124,6 +124,7 @@ void gpg(char **argv)
 }
 
 
+// hex lower case
 string hlc(const string &s)
 {
 	string r = s;
@@ -192,10 +193,13 @@ string has_id(const string &r)
 
 	// If we found opmsg persona id but have had multiple id's,
 	// return them
-	if (id.size() > 0 && return_r)
-		return r;
+	if (id.size() > 0) {
+		if (return_r)
+			return r;
+		return rcpt;
+	}
 
-	return id;
+	return "";
 }
 
 
@@ -295,11 +299,12 @@ int main(int argc, char **argv, char **envp)
 
 	if (mode == MODE_LIST) {
 		if (optind < argc) {
-			if (has_id(argv[optind]).size() == 0)
+			string id = "";
+			if ((id = has_id(argv[optind])).size() == 0)
 				gpg(oargv);
 
 			opmsg_list[3] = name;
-			opmsg_list[4] = strdup(argv[optind]);
+			opmsg_list[4] = strdup(id.c_str());
 			execvp(opmsg, opmsg_list);
 			exit(1);
 		}

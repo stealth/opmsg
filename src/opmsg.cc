@@ -666,8 +666,14 @@ int do_newdhparams()
 
 int do_list(const string &name)
 {
+	// for conveniance, treat hash sums the way they are, even
+	// if passed as --name for searching
+	string search = "";
+	if (name.size() >= 16 && is_hex_hash(name))
+		search = name;
+
 	keystore ks(config::phash, config::cfgbase);
-	if (ks.load() < 0) {
+	if (ks.load(search) < 0) {
 		estr<<prefix<<"ERROR: Loading keystore.\n"; eflush();
 		return -1;
 	}
@@ -675,7 +681,7 @@ int do_list(const string &name)
 	estr<<prefix<<"id | type | has privkey | #(EC)DHkeys | name\n";
 	eflush();
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
-		if (name.size() == 0 || i->second->get_name().find(name) != string::npos) {
+		if (search.size() > 0 || name.size() == 0 || i->second->get_name().find(name) != string::npos) {
 			ostr<<prefix<<idformat(i->second->get_id())<<" "<<i->second->get_type()<<"\t";
 			ostr<<i->second->can_sign()<<" "<<i->second->size()<<"\t"<<i->second->get_name()<<endl;
 		}
@@ -688,12 +694,16 @@ int do_list(const string &name)
 // As per gnupg source keylist.c: list_keyblock_colon()
 int do_pgplist(const string &name)
 {
+	string search = "";
+	if (name.size() >= 16 && is_hex_hash(name))
+		search = name;
+
 	keystore ks(config::phash, config::cfgbase);
-	if (ks.load() < 0)
+	if (ks.load(search) < 0)
 		return -1;
 
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
-		if (name.size() == 0 || i->second->get_name().find(name) != string::npos)
+		if (search.size() > 0 || name.size() == 0 || i->second->get_name().find(name) != string::npos)
 			ostr<<"pub:u:4096:1:"<<idformat(i->second->get_id())<<":1:0:::::eEsScCaA::+:::\n"
 			    <<"uid:u::::1:0:"<<idformat(i->second->get_id())<<"::"<<i->second->get_name()<<":\n";
 	}
