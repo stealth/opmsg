@@ -599,7 +599,7 @@ int do_newpersona(const string &name, const string &type)
 	estr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
 	estr<<prefix<<"opmsg --import --phash "<<config::phash;
 	if (name.size() > 0)
-		estr<<" --name "<<name;
+		estr<<" --name '"<<name<<"'";
 	if (config::deniable)
 		estr<<" --deniable";
 	estr<<"\n\n";

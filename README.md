@@ -206,8 +206,11 @@ Although this step is not strictly necessary, **it is recommended**. As personas
 created, you can (should) create a dedicated persona for each of your "projects" or
 contacts. That is, if you have 7 communication partners/peers, you should have
 created 7 personas; one EC/RSA key for each of them. To handle that easily with your
-mailer (see later for mutt integration), you should add a proper `--name`, describing your
-id. Additionally, you should `--link` your source persona (each of the 7 you created)
+mailer (see later for MUA integration), you should add a proper `--name`, describing your
+id. If you are using email addresses along with names, use the format of `--name 'da name <name@address>'`
+so that your MUA can easily pick a list of candidates for you.
+
+Additionally, you should `--link` your source persona (each of the 7 you created)
 to the particular destination persona that you wish to communicate with using this source id:
 
 ```

@@ -124,11 +124,31 @@ void gpg(char **argv)
 }
 
 
+string hlc(const string &s)
+{
+	string r = s;
+
+	for (string::size_type i = 0; i < r.size(); ++i) {
+		if (r[i] >= 'A' && r[i] <= 'F')
+			r[i] += ('a' - 'A');
+	}
+	return r;
+}
+
+
 // name or ID inside opmsg keystore?
 string has_id(const string &r)
 {
-	bool return_r = 0;
+	bool return_r = 0, is_hex = 0;
 	string rcpt = r, id = "", cfg = "";
+
+	if (r.find("0x") == 0)
+		rcpt = hlc(r.substr(2));
+
+	if (is_hex_hash(rcpt))
+		is_hex = 1;
+	else
+		rcpt = r;
 
 	// if multiple space-separated 0x key id's appear, split off first one
 	if (r.find("0x") == 0 && r.find("0x", 1) != string::npos) {
@@ -136,6 +156,7 @@ string has_id(const string &r)
 		if (idx == string::npos || idx < 3)
 			return id;
 		rcpt = r.substr(0, idx);
+		is_hex = 1;
 		return_r = 1;
 	}
 
@@ -150,7 +171,7 @@ string has_id(const string &r)
 		return 0;
 
 	// if hex id as rcpt, try right away
-	if (rcpt.find_first_of("0123456789abcdef") == 0) {
+	if (is_hex) {
 		if (rcpt.find("0x") == 0)
 			rcpt.erase(0, 2);
 		persona *p = ks->find_persona(rcpt);
