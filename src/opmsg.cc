@@ -77,7 +77,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.71 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.72 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -467,7 +467,7 @@ int do_decrypt()
 	for (;;) {
 		estr<<prefix<<"decrypting\n";
 
-		// Only an error if no opmg found so far
+		// Only an error if no opmsg found so far
 		if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
 			if (!found_one) {
 				estr<<prefix<<"ERROR: Missing persona/kex keys or not in OPMSG format.\n";
@@ -538,11 +538,26 @@ int do_decrypt()
 int do_verify(const string &verify_file)
 {
 	string ctext = "", hexhash = "";
+	string::size_type pos = 0;
 
 	if (read_msg(config::infile, ctext) < 0) {
 		estr<<prefix<<"ERROR: reading infile: "<<strerror(errno)<<"\n"; eflush();
 		return -1;
 	}
+
+	if ((pos = ctext.find(marker::opmsg_begin)) == string::npos) {
+		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n";
+		return -1;
+	}
+	if (pos > 0)
+		ctext.erase(0, pos);
+
+	if ((pos = ctext.find(marker::opmsg_end)) == string::npos) {
+		estr<<prefix<<"ERROR: Infile not in OPMSG format.\n";
+		return -1;
+	}
+
+	ctext.erase(pos + marker::opmsg_end.size());
 
 	message msg(1, config::cfgbase, config::phash, config::khash, config::shash, config::calgo);
 
