@@ -19,6 +19,7 @@
  */
 
 #include <string>
+#include <vector>
 #include <memory>
 #include <algorithm>
 #include <iterator>
@@ -201,7 +202,11 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	outmsg = marker::algos + phash + ":" + khash + ":" + shash + ":" + calgo + ":" + iv_b64 + "\n";
 
-	// in case of GCM modes, the AAD tag value goes right after algo marker
+	char cfg_s[32] = {0};
+	snprintf(cfg_s, sizeof(cfg_s), "%s%u:\n", marker::cfg_num.c_str(), version);
+	outmsg += cfg_s;
+
+	// in case of GCM modes, the AAD tag value goes right here
 	aad_tag_insert_pos = outmsg.size();
 
 	outmsg += marker::src_id + src_id_hex + "\n";
@@ -419,21 +424,118 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 }
 
 
+// helper function to parse some of the key=value parts of the opmsg blob,
+// to keep the decrypt() function straight forward. Only called after signature
+// verified correctly.
+// By splitting of the hdr and parsing it separately, this also speeds up
+// entire decrypt(), since optional tags are only searched within header
+// and not in the entire blob.
+int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
+{
+	string s = "";
+	string::size_type pos = string::npos, nl = string::npos;
+
+	kexdh = "";
+	aad_tag.clear();
+
+	// For optional extensions later. Also check the pinned version number to match
+	// whats been found at the entry (before signature)
+	if ((pos = hdr.find(marker::cfg_num)) != string::npos) {
+		unsigned int v = 0;
+		if (sscanf(hdr.c_str() + pos + marker::cfg_num.size(), "%u:", &v) != 1)
+			return build_error("parse_hdr: Invalid cfg-num tag.", -1);
+		if (v != version)
+			return build_error("parse_hdr: Version mismatch. Someone modified the message.", -1);
+	}
+
+	// get AAD tag if any (only required by GCM mode ciphers and poly1305)
+	if ((pos = hdr.find(marker::aad_tag)) != string::npos) {
+		pos += marker::aad_tag.size();
+		if ((nl = hdr.find("\n", pos)) == string::npos)
+			return build_error("parse_hdr: Error finding end of AAD tag.", -1);
+		string b64_aad_tag = hdr.substr(pos, nl - pos);
+		b64_decode(b64_aad_tag, s);
+		if (s.size() > 32)
+			return build_error("parse_hdr: Invalid AAD tag size.", -1);
+		aad_tag.insert(aad_tag.end(), s.begin(), s.end());
+	}
+
+	if ((pos = hdr.find(marker::kex_id)) == string::npos)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (1).", -1);
+	pos += marker::kex_id.size();
+	nl = hdr.find("\n", pos);
+	if (nl == string::npos || nl - pos > max_sane_string)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (2).", -1);
+	s = hdr.substr(pos, nl - pos);
+	if (!is_hex_hash(s))
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (3).", -1);
+	kex_id_hex = s;
+
+
+	// dst persona
+	if ((pos = hdr.find(marker::dst_id)) == string::npos)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (4).", -1);
+	pos += marker::dst_id.size();
+	nl = hdr.find("\n", pos);
+	if (nl == string::npos || nl - pos > max_sane_string)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (5).", -1);
+	s = hdr.substr(pos, nl - pos);
+	if (!is_hex_hash(s))
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (6).", -1);
+	dst_id_hex = s;
+
+	// new (ec)dh keys included for later (EC)DH kex?
+	string newdh = "";
+	for (;;) {
+		if ((pos = hdr.find(marker::ec_dh_begin)) == string::npos)
+			break;
+		if ((nl = hdr.find(marker::ec_dh_end, pos)) == string::npos)
+			return build_error("parse_hdr: Not in OPMSGv1/2 format (7)", -1);
+		if (nl - pos > max_sane_string)
+			return build_error("parse_hdr: Not in OPMSGv1/2 format (8).", -1);
+		newdh = hdr.substr(pos, nl + marker::ec_dh_end.size() - pos);
+		hdr.erase(pos, nl + marker::ec_dh_end.size() - pos);
+		ecdh_keys.push_back(newdh);
+		if (ecdh_keys.size() >= max_new_dh_keys)
+			break;
+	}
+
+
+	// the (EC)DH public part, optional. For "null" calgos, there is no kex.
+	if ((pos = hdr.find(marker::kex_begin)) == string::npos)
+		return 1;
+
+	if ((nl = hdr.find(marker::kex_end, pos)) == string::npos)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (9).", -1);
+	if (nl - pos > max_sane_string)
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (10).", -1);
+	string b64_kexdh = hdr.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
+	hdr.erase(pos, nl - pos + marker::kex_end.size());
+	b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
+	b64_decode(b64_kexdh, kexdh);
+	if (kexdh.empty())
+		return build_error("parse_hdr: Not in OPMSGv1/2 format (11).", -1);
+
+	return 1;
+}
+
+
+// must not be called twice on the same object and not intermixed with encrypt()
+// on the same object
 int message::decrypt(string &raw)
 {
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
 	PKEYbox *ec_dh = nullptr;
 	RSA *rsa = nullptr;
 	unsigned char iv[OPMSG_MAX_IV_LENGTH];
-	char aad_tag[16];
+	vector<char> aad_tag;
+	string kexdh = "";
 	unsigned int i = 0;
 	string s = "", iv_kdf = "", b64_aad_tag = "";
 	size_t n = 0;
 
 	for (i = 0; i < sizeof(iv); ++i)
 		iv[i] = i;
-
-	memset(aad_tag, 0, sizeof(aad_tag));
 
 	// nuke leading header, dont accept leading junk
 	if ((pos = raw.find(marker::opmsg_begin)) != 0)
@@ -495,19 +597,6 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Error decoding IV value.", -1);
 	memcpy(iv, iv_kdf.c_str(), sizeof(iv));
 
-	// get AAD tag if any (only required by GCM mode ciphers and poly1305)
-	if (has_aad && (pos = raw.find(marker::aad_tag)) != string::npos) {
-		pos += marker::aad_tag.size();
-		if ((nl = raw.find("\n", pos)) == string::npos) {
-			return build_error("decrypt: Error finding end of AAD tag.", -1);
-		}
-		b64_aad_tag = raw.substr(pos, nl - pos);
-		b64_decode(b64_aad_tag, s);
-		if (s.size() != sizeof(aad_tag))
-			return build_error("decrypt: Invalid AAD tag size.", -1);
-		memcpy(aad_tag, s.c_str(), sizeof(aad_tag));
-	}
-
 	// src persona
 	if ((pos = raw.find(marker::src_id)) == string::npos)
 		return build_error("decrypt: Not in OPMSGv1/2 format (9).", -1);
@@ -547,79 +636,44 @@ int message::decrypt(string &raw)
 	// at this point, the message is valid authenticated by src_id
 	//
 
-	src_name = src_persona->get_name();
-
-	// kex id first, so dst persona can load this kex id
-	if ((pos = raw.find(marker::kex_id)) == string::npos)
+	string::size_type databegin = string::npos;
+	if ((databegin = raw.find(marker::opmsg_databegin)) == string::npos)
 		return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
-	pos += marker::kex_id.size();
-	nl = raw.find("\n", pos);
-	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (13).", -1);
-	s = raw.substr(pos, nl - pos);
-	bool has_dh_key = (s != marker::rsa_kex_id);
-	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1/2 format (14).", -1);
-	kex_id_hex = s;
 
+	string hdr = raw.substr(0, databegin);
 
-	// dst persona
-	if ((pos = raw.find(marker::dst_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (15).", -1);
-	pos += marker::dst_id.size();
-	nl = raw.find("\n", pos);
-	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (16).", -1);
-	s = raw.substr(pos, nl - pos);
-	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1/2 format (17).", -1);
-	dst_id_hex = s;
+	// parse the remaining parts of the header
+	// Fills: kex_id_hex, dst_id_hex, kexdh, aad_tag
+	if (parse_hdr(hdr, kexdh, aad_tag) != 1)
+		return build_error("decrypt: " + err, -1);
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
 	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || (!dst_persona->can_decrypt() && calgo != "null"))
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
 
+	// header parsed correctly, split it off data body
+	raw.erase(0, databegin + marker::opmsg_databegin.size());
 
-	// new (ec)dh keys included for later (EC)DH kex?
-	string newdh = "";
-	for (;;) {
-		if ((pos = raw.find(marker::ec_dh_begin)) == string::npos)
-			break;
-		if ((nl = raw.find(marker::ec_dh_end, pos)) == string::npos)
-			break;
-		if (nl - pos > max_sane_string)
-			return build_error("decrypt: Not in OPMSGv1/2 format (18).", -1);
-		newdh = raw.substr(pos, nl + marker::ec_dh_end.size() - pos);
-		raw.erase(pos, nl + marker::ec_dh_end.size() - pos);
-		ecdh_keys.push_back(newdh);
-		if (!src_persona->add_dh_pubkey(khash, newdh))
-			ecdh_keys.pop_back();
-		if (ecdh_keys.size() >= max_new_dh_keys)
-			break;
+	// import the new (EC)DH keys that shipped with the message
+	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
+		if (!src_persona->add_dh_pubkey(khash, *it))
+			it = ecdh_keys.erase(it);
+		else
+			++it;
 	}
 
+	src_name = src_persona->get_name();
 	src_persona.reset();
 
 	// if null encryption, thats all!
-	if (calgo == "null") {
-		if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-			return build_error("decrypt: Not in OPMSGv1/2 format (19).", -1);
-		raw.erase(0, pos + marker::opmsg_databegin.size());
+	if (calgo == "null")
 		return 1;
-	}
 
-	// the (EC)DH public part
-	if ((pos = raw.find(marker::kex_begin)) == string::npos || (nl = raw.find(marker::kex_end, pos)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (20).", -1);
-	if (nl - pos > max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (21).", -1);
-	string b64_kexdh = raw.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
-	raw.erase(pos, nl - pos + marker::kex_end.size());
-	b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
-	string kexdh = "";
-	b64_decode(b64_kexdh, kexdh);
+	// everything else have to have a kex
 	if (kexdh.empty())
-		return build_error("decrypt: Not in OPMSGv1/2 format (22).", -1);
+		return build_error("decrypt: Missing Kex tag for non-null encryption!", -1);
+
+	bool has_dh_key = (kex_id_hex != marker::rsa_kex_id);
 
 	if (has_dh_key) {
 		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
@@ -719,11 +773,6 @@ int message::decrypt(string &raw)
 	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("decrypt: Error deriving key: ", -1);
 
-	if ((pos = raw.find(marker::opmsg_databegin)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (23).", -1);
-	// nuke anything until we get just encrypted (b64) payload
-	raw.erase(0, pos + marker::opmsg_databegin.size());
-
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
 	if (!c_ctx.get())
 		return build_error("decrypt::EVP_CIPHER_CTX_new:", -1);
@@ -732,7 +781,7 @@ int message::decrypt(string &raw)
 
 	if (has_aad) {
 		int aadlen = 0;
-		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_SET_TAG, sizeof(aad_tag), aad_tag) != 1)
+		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_SET_TAG, aad_tag.size(), &aad_tag[0]) != 1)
 			return build_error("decrypt::EVP_CIPHER_CTX_ctrl: ", -1);
 		if (EVP_DecryptUpdate(c_ctx.get(), nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
 			return build_error("decrypt::EVP_DecryptUpdate (AAD):", -1);
@@ -759,7 +808,7 @@ int message::decrypt(string &raw)
 			n = blen;
 		enc = "";
 		b64_decode(raw.c_str() + idx, n, enc);
-		if (!enc.size() || enc.size() > n)
+		if (enc.empty() || enc.size() > n)
 			return build_error("decrypt::b64_decode: Invalid Base64 input.", -1);
 		idx += n;
 		if (EVP_DecryptUpdate(c_ctx.get(), outbuf.get(), &outlen, (unsigned char *)enc.c_str(), enc.size()) != 1)

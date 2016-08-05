@@ -82,6 +82,10 @@ class message {
 		return r;
 	}
 
+protected:
+
+	int parse_hdr(std::string &, std::string &, std::vector<char> &);
+
 
 public:
 

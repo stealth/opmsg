@@ -56,6 +56,8 @@ extern std::string kex_id;
 
 extern std::string aad_tag;
 
+extern std::string cfg_num;
+
 extern std::string rsa_kex_id;
 
 extern std::string ec_kex_id;

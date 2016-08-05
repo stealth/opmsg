@@ -55,6 +55,7 @@ string src_id = "src-id=";
 string dst_id = "dst-id=";
 string kex_id = "kex-id=";
 string aad_tag = "gcm-aad-tag=";
+string cfg_num = "cfg-num=";
 
 // if no ephemeral DH keys are left, this signals standart RSA encrypted secret
 string rsa_kex_id = "00000000";
