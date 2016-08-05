@@ -49,7 +49,7 @@ unsigned int peer_isolation = 0;
 
 std::string rsa_e = "65537";
 
-std::string calgo = "aes128cbc";
+std::string calgo = "aes128gcm";
 std::string phash = "sha256";
 std::string shash = "sha256";
 std::string khash = "sha256";
