@@ -374,7 +374,7 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	if (dst_p->get_type() == marker::ec)
 		kex_id = marker::ec_kex_id;
 
-	if (!config::native_crypt) {
+	if (!config::native_crypt && config::calgo != "null") {
 		for (auto i = dst_p->first_key(); i != dst_p->end_key(); i = dst_p->next_key(i)) {
 			if (i->second->can_encrypt()) {
 				// only keys that peer sent us for import, so ignore (EC)DH keys
