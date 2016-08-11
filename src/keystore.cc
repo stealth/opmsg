@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2016 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -21,6 +21,7 @@
 #include <string>
 #include <cstring>
 #include <memory>
+#include <utility>
 #include <algorithm>
 #include <fcntl.h>
 #include <unistd.h>
@@ -234,7 +235,7 @@ int keystore::load(const string &hex)
 
 
 /* global version, as its needed by persona and keystore class */
-int gen_ec(string &pub, string &priv, string &err)
+int gen_ec(string &pub, string &priv, int nid, string &err)
 {
 	char *ptr = nullptr;
 
@@ -244,7 +245,7 @@ int gen_ec(string &pub, string &priv, string &err)
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(config::curve_nid), EC_KEY_free);
+	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(nid), EC_KEY_free);
 	if (!eckey.get()) {
 		err += build_error("gen_ec::EC_KEY_new_by_curve_name:");
 		return -1;
@@ -302,10 +303,10 @@ int gen_ec(string &pub, string &priv, string &err)
 }
 
 
-int keystore::gen_ec(string &pub, string &priv)
+int keystore::gen_ec(string &pub, string &priv, int nid)
 {
 	err = "keystore::";
-	return opmsg::gen_ec(pub, priv, err);
+	return opmsg::gen_ec(pub, priv, nid, err);
 }
 
 
@@ -528,32 +529,36 @@ map<string, persona *>::iterator keystore::next_pers(const map<string, persona *
 }
 
 
-PKEYbox *persona::find_dh_key(const string &hex)
+vector<PKEYbox *> persona::find_dh_key(const string &hex)
 {
+	vector<PKEYbox *> v;
+
 	// In case EC persona peer is out of ephemeral ECDH keys
-	if (hex == marker::ec_kex_id && ptype == marker::ec)
-		return pkey;
+	if (hex == marker::ec_kex_id && ptype == marker::ec) {
+		v.push_back(pkey);
+		return v;
+	}
 
 	auto i = keys.find(hex);
 	if (i == keys.end())
-		return build_error("find_dh_key: No such key.", nullptr);
+		return build_error("find_dh_key: No such key.", v);
 	return i->second;
 }
 
 
-map<string, PKEYbox *>::iterator persona::first_key()
+map<string, vector<PKEYbox *>>::iterator persona::first_key()
 {
 	return keys.begin();
 }
 
 
-map<string, PKEYbox *>::iterator persona::end_key()
+map<string, vector<PKEYbox *>>::iterator persona::end_key()
 {
 	return keys.end();
 }
 
 
-map<string, PKEYbox *>::iterator persona::next_key(const map<string, PKEYbox *>::iterator &it)
+map<string, vector<PKEYbox *>>::iterator persona::next_key(const map<string, vector<PKEYbox *>>::iterator &it)
 {
 	auto it2 = it;
 	return ++it2;
@@ -574,58 +579,88 @@ int persona::load_dh(const string &hex)
 	bool has_pub = 0, has_priv = 0;
 
 	if (!is_hex_hash(hex))
-		return build_error("load_dh: Not a valid (EC)DH hex id", -1);
+		return build_error("load_dh: Not a valid (EC)DH hex id.", -1);
 
-	// load public part of (EC)DH key
-	string dhfile = cfgbase + "/" + id + "/" + hex + "/dh.pub.pem";
+	if (keys.count(hex) > 0)
+		return build_error("load_dh: This key was already loaded.", -1);
 
-	unique_ptr<PKEYbox> pbox(new (nothrow) PKEYbox(nullptr, nullptr));
-	if (!pbox.get())
-		return build_error("load_dh: OOM", -1);
-	pbox->hex = hex;
+	string dhfile = "";
+	unique_ptr<FILE, FILE_del> f(nullptr, ffclose);
 
-	unique_ptr<FILE, FILE_del> f(fopen(dhfile.c_str(), "r"), ffclose);
-	do {
-		if (!f.get())
+	// up to 3 session keys per kex-id (kex-id is hexhash of first key)
+	for (int i = 0; i < 3; ++i) {
+		dhfile = "";
+
+		// load public part of (EC)DH key
+		dhfile = cfgbase + "/" + id + "/" + hex;
+		if (i > 0) {
+			char s[32] = {0};
+			snprintf(s, sizeof(s), "/dh.pub.%d.pem", i);
+			dhfile += s;
+		} else
+			dhfile += "/dh.pub.pem";
+
+		unique_ptr<PKEYbox> pbox(new (nothrow) PKEYbox(nullptr, nullptr));
+		if (!pbox.get())
+			return build_error("load_dh: OOM", -1);
+		pbox->hex = hex;
+
+		f.reset(fopen(dhfile.c_str(), "r"));
+
+		// assume no subkeys if open fails for them
+		if (i > 0 && !f.get())
 			break;
-		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-			break;
-		rewind(f.get());
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-		if (!evp.get())
-			break;
-		pbox->pub = evp.release();
-		pbox->pub_pem = string(buf, r);
-		has_pub = 1;
-	} while (0);
 
-	keys[hex] = pbox.release();
+		do {
+			if (!f.get())
+				break;
+			if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
+				break;
+			rewind(f.get());
+			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+			if (!evp.get())
+				break;
+			pbox->pub = evp.release();
+			pbox->pub_pem = string(buf, r);
+			has_pub = 1;
+		} while (0);
 
-	// now load private part, if available
-	dhfile = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
-	f.reset(fopen(dhfile.c_str(), "r"));
-	do {
-		if (!f.get())
-			break;
-		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-			return build_error("load_dh::fread: invalid (EC)DH privkey " + hex, -1);
-		rewind(f.get());
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-		if (!evp.get())
-			return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
-		keys[hex]->priv = evp.release();
-		keys[hex]->priv_pem = string(buf, r);
-		has_priv = 1;
-	} while (0);
+		keys[hex].push_back(pbox.release());
 
-	// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
-	// are tried to be re-imported from old mails
-	if (!has_pub && !has_priv) {
-		delete keys[hex];
-		keys.erase(hex);
+		// now load private part, if available
+		dhfile = cfgbase + "/" + id + "/" + hex;
+		if (i > 0) {
+			char s[32] = {0};
+			snprintf(s, sizeof(s), "/dh.priv.%d.pem", i);
+			dhfile += s;
+		} else
+			dhfile += "/dh.priv.pem";
 
-		errno = 0;
-		return 0;
+		f.reset(fopen(dhfile.c_str(), "r"));
+		do {
+			if (!f.get())
+				break;
+			if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
+				return build_error("load_dh::fread: invalid (EC)DH privkey " + hex, -1);
+			rewind(f.get());
+			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+			if (!evp.get())
+				return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
+			keys[hex][i]->priv = evp.release();
+			keys[hex][i]->priv_pem = string(buf, r);
+			has_priv = 1;
+		} while (0);
+
+		// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
+		// are tried to be re-imported from old mails
+		if (!has_pub && !has_priv) {
+			for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it)
+				delete *it;
+
+			keys.erase(hex);
+			errno = 0;
+			return 0;
+		}
 	}
 
 	// check if there was a designated peer. No problem if there isn't.
@@ -642,7 +677,7 @@ int persona::load_dh(const string &hex)
 		}
 		string peer = string(s);
 		if (is_hex_hash(peer))
-			keys[hex]->set_peer_id(peer);
+			keys[hex][0]->set_peer_id(peer);
 	}
 
 	errno = 0;
@@ -829,6 +864,15 @@ int persona::load(const std::string &dh_hex)
 }
 
 
+extern "C" typedef void (*vector_pkeybox_del)(vector<PKEYbox *> *);
+extern "C" void vector_pkeybox_free(vector<PKEYbox *> *v)
+{
+	for (auto it = v->begin(); it != v->end(); ++it)
+		delete *it;
+	delete v;
+}
+
+
 PKEYbox *persona::set_pkey(EVP_PKEY *pub, EVP_PKEY *priv)
 {
 	if (pkey)
@@ -937,74 +981,122 @@ DHbox *persona::new_dh_params()
 
 
 // get a new ephemeral (session, kex-id) key. Bind to a destination peer if given
-PKEYbox *persona::gen_kex_key(const string &hash, const string &peer)
+vector<PKEYbox *> persona::gen_kex_key(const string &hash, const string &peer)
 {
 	return gen_kex_key(algo2md(hash), peer);
 }
 
 
-PKEYbox *persona::gen_kex_key(const EVP_MD *md, const string &peer)
+vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 {
+	string pub_pem = "", priv_pem = "";
 	struct stat st;
 	int fd = -1;
 
-	string pub_pem = "", priv_pem = "", hex = "";
+	vector<pair<string, string>> kex_keys;
+
+	// v0 empty vector for error return
+	vector<PKEYbox *> v0;
+	string hex = "", h = "";
 
 	if (ptype == marker::ec) {
 		err = "persona::gen_kex_key::";
-		if (opmsg::gen_ec(pub_pem, priv_pem, err) < 0)
-			return nullptr;
-		err = "";
-		if (normalize_and_hexhash(md, pub_pem, hex) < 0)
-			return build_error("gen_kex_key::normalize_and_hexhash: Cant hash key.", nullptr);
+		// for each defined curve
+		for (unsigned int i = 0; i < config::curve_nids.size(); ++i) {
+			if (opmsg::gen_ec(pub_pem, priv_pem, config::curve_nids[i], err) < 0)
+				return v0;
+			err = "";
+			if (normalize_and_hexhash(md, pub_pem, h) < 0)
+				return build_error("gen_kex_key::normalize_and_hexhash: Cant hash key.", v0);
+			// first curve makes the hex-id
+			if (i == 0)
+				hex = h;
+			kex_keys.push_back(make_pair(pub_pem, priv_pem));
+		}
+
 	} else {
 		if (this->gen_dh_key(md, pub_pem, priv_pem, hex) < 0)
-			return nullptr;
+			return v0;
+		kex_keys.push_back(make_pair(pub_pem, priv_pem));
 	}
 
 	// unlikely...
 	if (keys.count(hex) > 0)
 		return keys[hex];
 
-	unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
-	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
-	if (!bio.get())
-		return build_error("gen_kex_key: OOM", nullptr);
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp_pub.get())
-		return build_error("gen_kex_key::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
-
-	sdup.reset(strdup(priv_pem.c_str()));
-	bio.reset(BIO_new_mem_buf(sdup.get(), priv_pem.size()));
-	if (!bio.get())
-		return build_error("gen_kex_key: OOM", nullptr);
-
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp_priv.get())
-		return build_error("gen_kex_key::PEM_read_bio_PrivateKey: Error reading PEM key", nullptr);
+	string hexdir = cfgbase + "/" + id + "/" + hex;
+	if (stat(hexdir.c_str(), &st) == 0)
+		return build_error("gen_kex_key: Error storing ECDH keys " + hex, v0);
 
 	string tmpdir = "";
 	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
-		return build_error("gen_kex_key::mkdir:", nullptr);
+		return build_error("gen_kex_key::mkdir:", v0);
 
-	string dhfile1 = tmpdir + "/dh.pub.pem";
-	if ((fd = open(dhfile1.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
-		return build_error("gen_kex_key::open:", nullptr);
-	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
-	if (!f.get())
-		return build_error("gen_kex_key::fdopen:", nullptr);
-	if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
-		return build_error("gen_kex_key::fwrite:", nullptr);
-	f.reset();
-	string dhfile2 = tmpdir + "/dh.priv.pem";
-	if ((fd = open(dhfile2.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
-		return build_error("gen_kex_key::open:", nullptr);
-	f.reset(fdopen(fd, "r+"));
-	if (!f.get())
-		return build_error("gen_kex_key::fdopen:", nullptr);
-	if (fwrite(priv_pem.c_str(), priv_pem.size(), 1, f.get()) != 1)
-		return build_error("gen_kex_key::fwrite:", nullptr);
-	f.reset();
+	unique_ptr<vector<PKEYbox *>, vector_pkeybox_del> pboxes(new (nothrow) vector<PKEYbox *>, vector_pkeybox_free);
+
+	for (unsigned int i = 0; i < kex_keys.size(); ++i) {
+		pub_pem = kex_keys[i].first;
+		priv_pem = kex_keys[i].second;
+
+		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
+		if (!bio.get())
+			return build_error("gen_kex_key: OOM", v0);
+		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		if (!evp_pub.get())
+			return build_error("gen_kex_key::PEM_read_bio_PUBKEY: Error reading PEM key", v0);
+
+		sdup.reset(strdup(priv_pem.c_str()));
+		bio.reset(BIO_new_mem_buf(sdup.get(), priv_pem.size()));
+		if (!bio.get())
+			return build_error("gen_kex_key: OOM", v0);
+
+		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		if (!evp_priv.get())
+			return build_error("gen_kex_key::PEM_read_bio_PrivateKey: Error reading PEM key", v0);
+
+		string dhfile1 = tmpdir + "/dh.pub.pem";
+		if (i > 0) {
+			char s[32] = {0};
+			snprintf(s, sizeof(s), "/dh.pub.%d.pem", i);
+			dhfile1 = tmpdir + s;
+		}
+
+		if ((fd = open(dhfile1.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
+			return build_error("gen_kex_key::open:", v0);
+		unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
+		if (!f.get())
+			return build_error("gen_kex_key::fdopen:", v0);
+		if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
+			return build_error("gen_kex_key::fwrite:", v0);
+		f.reset();
+
+		string dhfile2 = tmpdir + "/dh.priv.pem";
+		if (i > 0) {
+			char s[32] = {0};
+			snprintf(s, sizeof(s), "/dh.priv.%d.pem", i);
+			dhfile2 = tmpdir + s;
+		}
+		if ((fd = open(dhfile2.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
+			return build_error("gen_kex_key::open:", v0);
+		f.reset(fdopen(fd, "r+"));
+		if (!f.get())
+			return build_error("gen_kex_key::fdopen:", v0);
+		if (fwrite(priv_pem.c_str(), priv_pem.size(), 1, f.get()) != 1)
+			return build_error("gen_kex_key::fwrite:", v0);
+		f.reset();
+
+		PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), evp_priv.release());
+		if (!pbox)
+			return build_error("gen_kex_key: OOM", v0);
+
+		pbox->pub_pem = pub_pem;
+		pbox->priv_pem = priv_pem;
+		pbox->hex = hex;
+		pbox->set_peer_id(peer);
+
+		pboxes->push_back(pbox);
+	}
 
 	string peerfile = tmpdir + "/peer";
 	// record any given designated peer
@@ -1019,27 +1111,19 @@ PKEYbox *persona::gen_kex_key(const EVP_MD *md, const string &peer)
 		break;
 	}
 
-	string hexdir = cfgbase + "/" + id + "/" + hex;
 
-	// apparently the key was already imported once, so dont do it again
-	if (stat(hexdir.c_str(), &st) == 0 || rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
-		unlink(dhfile1.c_str());
-		unlink(dhfile2.c_str());
+	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
+		for (auto it : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
+			string s = tmpdir + it;
+			unlink(s.c_str());
+		}
 		unlink(peerfile.c_str());
 		rmdir(tmpdir.c_str());
-		return build_error("gen_kex_key: Error storing ECDH keys " + hex, nullptr);
+		return build_error("gen_kex_key: Error storing ECDH keys " + hex, v0);
 	}
 
-	PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), evp_priv.release());
-	if (!pbox)
-		return build_error("gen_kex_key: OOM", nullptr);
-
-	pbox->pub_pem = pub_pem;
-	pbox->priv_pem = priv_pem;
-	pbox->hex = hex;
-	pbox->set_peer_id(peer);
-	keys[hex] = pbox;
-	return pbox;
+	keys[hex] = *(pboxes.release());
+	return keys[hex];
 }
 
 
@@ -1111,7 +1195,7 @@ void persona::used_key(const string &hexid, bool u)
 }
 
 
-PKEYbox *persona::add_dh_pubkey(const string &hash, string &pem)
+vector<PKEYbox *> persona::add_dh_pubkey(const string &hash, vector<string> &pem)
 {
 	return add_dh_pubkey(algo2md(hash), pem);
 }
@@ -1119,67 +1203,105 @@ PKEYbox *persona::add_dh_pubkey(const string &hash, string &pem)
 
 // import a new (EC)DH pub key from a message to be later used for sending
 // encrypted messages to this persona
-PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
+vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 {
-	struct stat st;
-	int fd = -1;
+	struct stat st = {0};
+	int fd = -1, keytype = -1, keytype0 = -1;
+	string hex = "", dhfile = "", hexdir = "", tmpdir = "";
+	vector<PKEYbox *> v0;	// empty vector for error return
 
-	unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
-	unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
-	if (!bio.get())
-		return build_error("add_dh_pubkey: OOM", nullptr);
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
-	if (!evp_pub.get())
-		return build_error("add_dh_pubkey::PEM_read_bio_PUBKEY: Error reading PEM key", nullptr);
+	if (pubs.size() > 3)
+		return build_error("add_dh_pubkey: Too many keys in import vector.", v0);
 
-	// DH keys are hashed differently than EC(DH) keys, as DH pubkey consists of a single
-	// BN, ECDH consists of a pair of BNs (EC point)
-	string hex = "";
-	if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_DH) {
-		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
-		BIGNUM *pub_key = nullptr;
-		DH_get0_key(dh.get(), &pub_key, nullptr);
-		if (!dh.get() || bn2hexhash(md, pub_key, hex) < 0)
-			return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", nullptr);
-	} else if (EVP_PKEY_base_id(evp_pub.get()) == EVP_PKEY_EC) {
-		if (normalize_and_hexhash(md, pub_pem, hex) < 0)
-			return build_error("add_dh_key:: Error hashing ECDH pubkey.", nullptr);;
-	} else
-		return build_error("add_dh_pubkey: Unknown key type.", nullptr);
+	unique_ptr<vector<PKEYbox *>, vector_pkeybox_del> pboxes(new (nothrow) vector<PKEYbox *>, vector_pkeybox_free);
+	unique_ptr<FILE, FILE_del> f(nullptr, ffclose);
 
-	// already imported once upon a time?
-	if (imported.count(hex) > 0)
-		return build_error("add_dh_pubkey: Key already exist(ed).", nullptr);
+	for (unsigned int i = 0; i < pubs.size(); ++i) {
+		string &pub_pem = pubs[i];
 
-	string hexdir = cfgbase + "/" + id + "/" + hex;
+		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
+		if (!bio.get())
+			return build_error("add_dh_pubkey: OOM", v0);
+		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		if (!evp_pub.get())
+			return build_error("add_dh_pubkey::PEM_read_bio_PUBKEY: Error reading PEM key", v0);
 
-	// some remote persona tries to import a key twice?
-	// stat() to check if an empty key directory exists. That'd mean that
-	// key was already imported and used once. Do not reimport. (Later rename()
-	// would not fail on empty target dirs.)
-	// Needed since older opmsg versions leave empty hexdir instead of recording
-	// it in "imported" file
-	if (keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
-		return build_error("add_dh_pubkey: Key already exist(ed).", nullptr);
+		// pin keytype
+		if (i == 0)
+			keytype0 = EVP_PKEY_base_id(evp_pub.get());
 
-	string tmpdir = "";
-	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
-		return build_error("add_dh_key::mkdir:", nullptr);
+		keytype = EVP_PKEY_base_id(evp_pub.get());
 
-	string dhfile = tmpdir + "/dh.pub.pem";
-	if ((fd = open(dhfile.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
-		return build_error("add_dh_key::open:", nullptr);
-	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
-	if (!f.get())
-		return build_error("add_dh_key::fdopen:", nullptr);
-	if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
-		return build_error("add_dh_key::fwrite:", nullptr);
-	f.reset();
+		if (keytype != keytype0)
+			return build_error("add_dh_pubkey: Mismatch in multiple keys' types. (ECDH and DH mixed).", v0);
+
+		// DH keys are hashed differently than EC(DH) keys, as DH pubkey consists of a single
+		// BN, ECDH consists of a pair of BNs (EC point)
+		if (keytype == EVP_PKEY_DH) {
+			if (i > 0)
+				return build_error("add_dh_key:: Trying to add multiple DH keys as one.", v0);
+			unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
+			BIGNUM *pub_key = nullptr;
+			DH_get0_key(dh.get(), &pub_key, nullptr);
+			if (!dh.get() || bn2hexhash(md, pub_key, hex) < 0)
+				return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", v0);
+		} else if (keytype == EVP_PKEY_EC) {
+			string h = "";
+			if (normalize_and_hexhash(md, pub_pem, h) < 0)
+				return build_error("add_dh_key:: Error hashing ECDH pubkey.", v0);
+			// the first key makes the hex id
+			if (i == 0)
+				hex = h;
+		} else
+			return build_error("add_dh_pubkey: Unknown key type.", v0);
+
+		hexdir = cfgbase + "/" + id + "/" + hex;
+
+		if (i == 0) {
+			// some remote persona tries to import a key twice?
+			// stat() to check if an empty key directory exists. That'd mean that
+			// key was already imported and used once. Do not reimport. (Later rename()
+			// would not fail on empty target dirs.)
+			// Needed since older opmsg versions leave empty hexdir instead of recording
+			// it in "imported" file
+			if (imported.count(hex) > 0 || keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
+				return build_error("add_dh_pubkey: Key already exist(ed).", v0);
+
+			if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
+				return build_error("add_dh_key::mkdir:", v0);
+
+			dhfile = tmpdir + "/dh.pub.pem";
+		} else {
+			char s[32] = {0};
+			snprintf(s, sizeof(s), "/dh.pub.%d.pem", i);
+			dhfile = tmpdir + s;
+		}
+
+		if ((fd = open(dhfile.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
+			return build_error("add_dh_key::open:", v0);
+		f.reset(fdopen(fd, "r+"));
+		if (!f.get())
+			return build_error("add_dh_key::fdopen:", v0);
+		if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
+			return build_error("add_dh_key::fwrite:", v0);
+		f.reset();
+
+		PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), nullptr);
+		if (!pbox)
+			return build_error("add_dh_pubkey:: OOM", v0);
+		pbox->pub_pem = pub_pem;
+		pbox->hex = hex;
+		pboxes->push_back(pbox);
+	}
 
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
-		unlink(dhfile.c_str());
+		for (auto it : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
+			string s = tmpdir + it;
+			unlink(s.c_str());
+		}
 		rmdir(tmpdir.c_str());
-		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, nullptr);
+		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, v0);
 	}
 
 	// record this key id as imported
@@ -1192,13 +1314,9 @@ PKEYbox *persona::add_dh_pubkey(const EVP_MD *md, string &pub_pem)
 	}
 	f.reset();	// calls unlock
 
-	PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), nullptr);
-	if (!pbox)
-		return build_error("add_dh_pubkey:: OOM", nullptr);
-	pbox->pub_pem = pub_pem;
-	pbox->hex = hex;
-	keys[hex] = pbox;
-	return pbox;
+	keys[hex] = *(pboxes.release());
+
+	return keys[hex];
 }
 
 
@@ -1212,7 +1330,8 @@ int persona::del_dh_id(const string &hex)
 
 	string dir = cfgbase + "/" + id + "/" + hex;
 	if (keys.count(hex) > 0) {
-		delete keys[hex];
+		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it)
+			delete *it;
 		keys.erase(hex);
 	}
 	return rmdir(dir.c_str());
@@ -1227,34 +1346,46 @@ int persona::del_dh_priv(const string &hex)
 	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
 		return 0;
 
-	string file = cfgbase + "/" + id + "/" + hex + "/dh.priv.pem";
+	string base = cfgbase + "/" + id + "/" + hex;
 	string used = cfgbase + "/" + id + "/" + hex + "/used";
 	string peer = cfgbase + "/" + id + "/" + hex + "/peer";
 
-	struct stat st;
-	if (stat(file.c_str(), &st) < 0)
-		return build_error("del_dh_priv: Invalid keyfile.", -1);
+	int j = 0;
+	struct stat st = {0};
+	for (auto it : vector<string>{"/dh.priv.pem", "/dh.priv.1.pem", "/dh.priv.2.pem"}) {
+		string file = base + it;
+		int fd = open(file.c_str(), O_RDWR);
 
-	int fd = open(file.c_str(), O_RDWR);
-	if (fd < 0)
-		return build_error("del_dh_priv: Unable to open keyfile for shredding.", -1);
+		// ENOENT errors for (possibly not existing) subkeys are OK
+		if (fd < 0) {
+			if (j == 0 || errno != ENOENT)
+				return build_error("del_dh_priv: Unable to open keyfile for shredding.", -1);
+			else
+				continue;
+		}
 
-	char buf[512];
-	memset(buf, 0, sizeof(buf));
-	for (off_t i = 0; i < st.st_size; i += sizeof(buf)) {
-		if (write(fd, buf, sizeof(buf)) > 0)
-			sync();
+		if (fstat(fd, &st) < 0)
+			return build_error("del_dh_priv: Unable to fstat keyfile during shredding.", -1);
+
+		char buf[512];
+		memset(buf, 0, sizeof(buf));
+		for (off_t i = 0; i < st.st_size; i += sizeof(buf)) {
+			if (write(fd, buf, sizeof(buf)) > 0)
+				sync();
+		}
+		close(fd);
+		unlink(file.c_str());
+		++j;
 	}
-	close(fd);
 
-	unlink(file.c_str());
 	unlink(used.c_str());
 	unlink(peer.c_str());
 
-	auto i = keys.find(hex);
-	if (i != keys.end()) {
-		i->second->priv_pem = "";
-		EVP_PKEY_free(i->second->priv); i->second->priv = nullptr;
+	if (keys.count(hex) > 0) {
+		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it) {
+			(*it)->priv_pem = "";
+			EVP_PKEY_free((*it)->priv); (*it)->priv = nullptr;
+		}
 	}
 
 	errno = 0;
@@ -1270,12 +1401,15 @@ int persona::del_dh_pub(const string &hex)
 	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
 		return 0;
 
-	string file = cfgbase + "/" + id + "/" + hex + "/dh.pub.pem";
-	unlink(file.c_str());
-	auto i = keys.find(hex);
-	if (i != keys.end()) {
-		i->second->pub_pem = "";
-		EVP_PKEY_free(i->second->pub); i->second->pub = nullptr;
+	string file = cfgbase + "/" + id + "/" + hex;
+	for (auto it : vector<string>{"/dh.pub.pem", "/dh.pub.1.pem", "/dh.pub.2.pem"})
+		unlink((file + it).c_str());
+
+	if (keys.count(hex) > 0) {
+		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it) {
+			(*it)->pub_pem = "";
+			EVP_PKEY_free((*it)->pub); (*it)->pub = nullptr;
+		}
 	}
 	return 0;
 }

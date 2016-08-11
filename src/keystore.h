@@ -149,7 +149,7 @@ class persona {
 	std::string id, name, link_src, ptype;
 
 	// The (EC)DH 'session' keys this persona holds
-	std::map<std::string, PKEYbox *> keys;
+	std::map<std::string, std::vector<PKEYbox *>> keys;
 
 	// List of hashes of all imported keys so far
 	std::map<std::string, unsigned int> imported;
@@ -192,9 +192,10 @@ public:
 	virtual ~persona()
 	{
 		for (auto i = keys.begin(); i != keys.end(); ++i) {
-			if (i->second)
-				delete i->second;
+			for (auto j = i->second.begin(); j != i->second.end(); ++j)
+				delete *j;
 		}
+
 		delete pkey;
 		delete dh_params;
 	}
@@ -265,17 +266,17 @@ public:
 
 	DHbox *new_dh_params(const std::string &pem);
 
-	PKEYbox *add_dh_pubkey(const std::string &hash, std::string &pem);
+	std::vector<PKEYbox *> add_dh_pubkey(const std::string &hash, std::vector<std::string> &pems);
 
-	PKEYbox *add_dh_pubkey(const EVP_MD *md, std::string &pem);
+	std::vector<PKEYbox *> add_dh_pubkey(const EVP_MD *md, std::vector<std::string> &pems);
 
-	PKEYbox *gen_kex_key(const std::string &hash, const std::string & = "");
+	std::vector<PKEYbox *> gen_kex_key(const std::string &hash, const std::string & = "");
 
 	int gen_dh_key(const EVP_MD *md, std::string&, std::string&, std::string&);
 
-	PKEYbox *gen_kex_key(const EVP_MD *md, const std::string & = "");
+	std::vector<PKEYbox *> gen_kex_key(const EVP_MD *md, const std::string & = "");
 
-	PKEYbox *find_dh_key(const std::string &hex);
+	std::vector<PKEYbox *> find_dh_key(const std::string &hex);
 
 	int del_dh_id(const std::string &hex);
 
@@ -294,11 +295,11 @@ public:
 
 	int link(const std::string &hex);
 
-	std::map<std::string, PKEYbox *>::iterator first_key();
+	std::map<std::string, std::vector<PKEYbox *>>::iterator first_key();
 
-	std::map<std::string, PKEYbox *>::iterator end_key();
+	std::map<std::string, std::vector<PKEYbox *>>::iterator end_key();
 
-	std::map<std::string, PKEYbox *>::iterator next_key(const std::map<std::string, PKEYbox *>::iterator &);
+	std::map<std::string, std::vector<PKEYbox *>>::iterator next_key(const std::map<std::string, std::vector<PKEYbox *>>::iterator &);
 
 	int size()
 	{
@@ -366,7 +367,7 @@ public:
 
 	int gen_rsa(std::string &pub, std::string &priv);
 
-	int gen_ec(std::string &pub, std::string &priv);
+	int gen_ec(std::string &pub, std::string &priv, int);
 
 	persona *add_persona(const std::string &name, const std::string &rsa_pub_pem, const std::string &rsa_priv_pem, const std::string &dhparams_pem);
 

@@ -26,7 +26,7 @@ namespace opmsg {
 enum {
 	DEFAULT_NEW_DH_KEYS	= 3,
 	MIN_NEW_DH_KEYS		= 0,
-	MAX_NEW_DH_KEYS		= 10,
+	MAX_NEW_DH_KEYS		= 33,		// ec_domains * n
 
 	DEFAULT_DH_PLEN		= 2048,
 	MIN_DH_PLEN		= 1024,

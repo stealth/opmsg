@@ -22,16 +22,22 @@
 #define opmsg_config_h
 
 #include <string>
+#include <vector>
+
 
 namespace opmsg {
 
 namespace config {
 
-extern int dh_plen, rsa_len, new_dh_keys, native_crypt, deniable, curve_nid;
+extern int dh_plen, rsa_len, new_dh_keys, native_crypt, deniable;
+
+extern std::vector<int> curve_nids;
+extern std::vector<std::string> curves;
+
 extern std::string rsa_e;
 
 extern std::string infile, outfile, calgo, idformat, my_id;
-extern std::string phash, shash, khash, cfgbase, curve;
+extern std::string phash, shash, khash, cfgbase;
 
 extern unsigned int version;
 

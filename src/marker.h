@@ -49,7 +49,7 @@ extern std::string opmsg_databegin;
 extern std::string kex_begin;
 extern std::string kex_end;
 
-extern std::string version1, version2;
+extern std::string version1, version2, version3;
 extern std::string src_id;
 extern std::string dst_id;
 extern std::string kex_id;

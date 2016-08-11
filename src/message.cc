@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2016 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -52,12 +52,12 @@ static string::size_type lwidth = 80, max_sane_string = 0x1000;
 
 
 //                                                                                                                                          64
-static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const string &s1, const string &s2, unsigned char key[OPMSG_MAX_KEY_LENGTH])
+static int kdf_v123(unsigned int vers, unsigned char *secret, int slen, const string &s1, const string &s2, unsigned char key[OPMSG_MAX_KEY_LENGTH])
 {
 	unsigned int hlen = 0;
 	unsigned char digest[EVP_MAX_MD_SIZE];	// 64 which matches sha512
 
-	if (slen <= 0 || (vers != 1 && vers != 2))
+	if (slen <= 0 || vers < 1 || vers > 3)
 		return -1;
 	memset(key, 0xff, OPMSG_MAX_KEY_LENGTH);
 
@@ -69,18 +69,30 @@ static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const str
 	if (EVP_DigestUpdate(md_ctx.get(), secret, slen) != 1)
 		return -1;
 
-	if (vers == 1) {
-		if (EVP_DigestUpdate(md_ctx.get(), marker::version1.c_str(), marker::version1.size()) != 1)
-			return -1;
-	} else if (vers == 2) {
-		if (EVP_DigestUpdate(md_ctx.get(), marker::version2.c_str(), marker::version2.size()) != 1)
-			return -1;
+	string vs = "";
+	switch (vers) {
+	case 1:
+		vs = marker::version1;
+		break;
+	case 2:
+		vs = marker::version2;
+		break;
+	case 3:
+		vs = marker::version3;
+		break;
+	default:
+		return -1;
+	}
+
+	if (EVP_DigestUpdate(md_ctx.get(), vs.c_str(), vs.size()) != 1)
+		return -1;
+
+	if (vers >= 2) {
 		if (EVP_DigestUpdate(md_ctx.get(), s1.c_str(), s1.size()) != 1)
 			return -1;
 		if (EVP_DigestUpdate(md_ctx.get(), s2.c_str(), s2.size()) != 1)
 			return -1;
-	} else
-		return -1;
+	}
 
 	if (EVP_DigestFinal_ex(md_ctx.get(), digest, &hlen) != 1)
 		return -1;
@@ -94,7 +106,7 @@ static int kdf_v12(unsigned int vers, unsigned char *secret, int slen, const str
 
 static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_KEY_LENGTH])
 {
-	return kdf_v12(1, secret, slen, "", "", key);
+	return kdf_v123(1, secret, slen, "", "", key);
 }
 
 
@@ -153,8 +165,9 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	char aad_tag[16];
 	RSA *rsa = nullptr;
 	// an ECDH or DH key
-	PKEYbox *ec_dh = nullptr;
-	string outmsg = "", b64pubkey = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
+	vector<PKEYbox *> ec_dh;
+	vector<string> b64pubkeys;
+	string outmsg = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
 	string::size_type aad_tag_insert_pos = string::npos;
 	bool no_dh_key = (kex_id_hex == marker::rsa_kex_id);
 	int ecode = 0;
@@ -187,7 +200,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return build_error("encrypt:: missing key for dst persona " + dst_id_hex, -1);
 
 	if (!no_dh_key) {
-		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
+		ec_dh = dst_persona->find_dh_key(kex_id_hex);
+		if (ec_dh.empty() || !ec_dh[0]->can_encrypt())
 			return build_error("encrypt: Invalid (EC)DH key id " + kex_id_hex, -1);
 	}
 
@@ -203,7 +217,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	outmsg = marker::algos + phash + ":" + khash + ":" + shash + ":" + calgo + ":" + iv_b64 + "\n";
 
 	char cfg_s[32] = {0};
-	snprintf(cfg_s, sizeof(cfg_s), "%s%u:\n", marker::cfg_num.c_str(), version);
+	snprintf(cfg_s, sizeof(cfg_s), "%s%u:%u:\n", marker::cfg_num.c_str(), version, ec_domains);
 	outmsg += cfg_s;
 
 	// in case of GCM modes, the AAD tag value goes right here
@@ -223,8 +237,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		outmsg.insert(0, b64sig);
 		if (version == 1)
 			outmsg.insert(0, marker::version1);
-		else
+		else if (version == 2)
 			outmsg.insert(0, marker::version2);
+		else
+			outmsg.insert(0, marker::version3);
 		outmsg.insert(0, marker::opmsg_begin);
 		outmsg += marker::opmsg_end;
 		raw = outmsg;
@@ -245,10 +261,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	unique_ptr<unsigned char[]> secret(new (nothrow) unsigned char[slen]);
 	if (!secret.get())
 		return build_error("encrypt: OOM", -1);
-	outmsg += marker::kex_begin;
-	if (ec_dh && (EVP_PKEY_base_id(ec_dh->pub) == EVP_PKEY_DH)) {
+
+	if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->pub) == EVP_PKEY_DH)) {
 		BIGNUM *his_pub_key = nullptr, *my_pub_key = nullptr;
-		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh->pub), DH_free);
+		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh[0]->pub), DH_free);
 		if (!dh.get())
 			return build_error("encrypt: OOM", -1);
 		unique_ptr<DH, DH_del> mydh(DHparams_dup(dh.get()), DH_free);
@@ -266,42 +282,71 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
 		if (!bin.get() || BN_bn2bin(my_pub_key, bin.get()) != binlen)
 			return build_error("encrypt::BN_bn2bin: Cannot convert DH key ", -1);
-		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
-	} else if (ec_dh && (EVP_PKEY_base_id(ec_dh->pub) == EVP_PKEY_EC)) {
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh->pub, nullptr), EVP_PKEY_CTX_free);
-		if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
-			return build_error("encrypt::EVP_PKEY_keygen_init:", -1);
-		EVP_PKEY *ppkey = nullptr;
-		if (EVP_PKEY_keygen(ctx1.get(), &ppkey) != 1)
-			return build_error("encrypt::EVP_PKEY_keygen:", -1);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> my_ec(ppkey, EVP_PKEY_free);
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(my_ec.get(), nullptr), EVP_PKEY_CTX_free);
-		if (EVP_PKEY_derive_init(ctx2.get()) != 1)
-			return build_error("encrypt::EVP_PKEY_derive_init: ", -1);
-		if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh->pub) != 1)
-			return build_error("encrypt::EVP_PKEY_derive_set_peer: ", -1);
 
-		// find len
-		size_t len = 0;
-		if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
-			return build_error("encrypt::EVP_PKEY_derive: ", -1);
-		if (len > max_sane_string)
-			return build_error("encrypt: Insane large derived keylen.", -1);
-		secret.reset(new (nothrow) unsigned char[len]);
-		if (!secret.get() || EVP_PKEY_derive(ctx2.get(), secret.get(), &len) != 1)
-			return build_error("encrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
-		slen = (int)len;
-		unique_ptr<EC_KEY, EC_KEY_del> ec(EVP_PKEY_get1_EC_KEY(my_ec.get()), EC_KEY_free);
-		unique_ptr<BIGNUM, BIGNUM_del> bn(EC_POINT_point2bn(EC_KEY_get0_group(ec.get()),
-		                                                    EC_KEY_get0_public_key(ec.get()),
-		                                                    POINT_CONVERSION_COMPRESSED, nullptr, nullptr), BN_free);
-		if (!bn.get())
-			return build_error("encrypt::EC_POINT_point2bn:", -1);
-		int binlen = BN_num_bytes(bn.get());
-		unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
-		if (!bin.get() || BN_bn2bin(bn.get(), bin.get()) != binlen)
-			return build_error("encrypt::BN_bn2bin: Cannot convert ECDH key ", -1);
-		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, b64pubkey);
+		string s = "";
+		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, s);
+		b64pubkeys.push_back(s);
+
+	} else if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->pub) == EVP_PKEY_EC)) {
+
+		vector<unsigned char> secret_v;
+		secret_v.reserve(0x1000);	// to avoid re-allocation
+		slen = 0;
+
+		for (unsigned int i = 0; i < ec_dh.size(); ++i) {
+			if (!ec_dh[i]->can_encrypt() || EVP_PKEY_base_id(ec_dh[i]->pub) != EVP_PKEY_EC)
+				return build_error("encrypt: Found non-ECDH key in ECDH loop.", -1);
+
+			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh[i]->pub, nullptr), EVP_PKEY_CTX_free);
+			if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
+				return build_error("encrypt::EVP_PKEY_keygen_init:", -1);
+			EVP_PKEY *ppkey = nullptr;
+			if (EVP_PKEY_keygen(ctx1.get(), &ppkey) != 1)
+				return build_error("encrypt::EVP_PKEY_keygen:", -1);
+			unique_ptr<EVP_PKEY, EVP_PKEY_del> my_ec(ppkey, EVP_PKEY_free);
+			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(my_ec.get(), nullptr), EVP_PKEY_CTX_free);
+			if (EVP_PKEY_derive_init(ctx2.get()) != 1)
+				return build_error("encrypt::EVP_PKEY_derive_init: ", -1);
+			if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh[i]->pub) != 1)
+				return build_error("encrypt::EVP_PKEY_derive_set_peer: ", -1);
+
+			// find len
+			size_t len = 0;
+			if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
+				return build_error("encrypt::EVP_PKEY_derive: ", -1);
+			if ((unsigned int)slen > max_sane_string || len > max_sane_string)
+				return build_error("encrypt: Insane large derived keylen.", -1);
+			vector<unsigned char> secret_i(len, 0);
+
+			if (EVP_PKEY_derive(ctx2.get(), &secret_i[0], &len) != 1)
+				return build_error("encrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+			secret_v.insert(secret_v.end(), secret_i.begin(), secret_i.end());
+			slen += (int)len;
+			unique_ptr<EC_KEY, EC_KEY_del> ec(EVP_PKEY_get1_EC_KEY(my_ec.get()), EC_KEY_free);
+			unique_ptr<BIGNUM, BIGNUM_del> bn(EC_POINT_point2bn(EC_KEY_get0_group(ec.get()),
+		        	                                            EC_KEY_get0_public_key(ec.get()),
+		                	                                    POINT_CONVERSION_COMPRESSED, nullptr, nullptr), BN_free);
+			if (!bn.get())
+				return build_error("encrypt::EC_POINT_point2bn:", -1);
+			int binlen = BN_num_bytes(bn.get());
+			unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
+			if (!bin.get() || BN_bn2bin(bn.get(), bin.get()) != binlen)
+				return build_error("encrypt::BN_bn2bin: Cannot convert ECDH key ", -1);
+
+			string s = "";
+			b64_encode(reinterpret_cast<char *>(bin.get()), binlen, s);
+			b64pubkeys.push_back(s);
+
+		}
+
+		if ((unsigned int)slen != secret_v.size() || (unsigned int)slen > max_sane_string)
+			return build_error("encrypt: Huh? Mismatch in calculated secret sizes.", -1);
+
+		secret.reset(new (nothrow) unsigned char[slen]);
+		if (!secret.get())
+			return build_error("encrypt: OOM", -1);
+		memcpy(secret.get(), &secret_v[0], slen);
+
 	} else {
 		if (RAND_bytes(secret.get(), slen) != 1)
 			return build_error("encrypt::RAND_bytes: ", -1);
@@ -328,23 +373,31 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		if (EVP_PKEY_encrypt(p_ctx.get(), outbuf.get(), &outlen, secret.get(), slen) != 1)
 			return build_error("encrypt::EVP_PKEY_encrypt: ", -1);
 
-		b64_encode(reinterpret_cast<char *>(outbuf.get()), outlen, b64pubkey);
+		string s = "";
+		b64_encode(reinterpret_cast<char *>(outbuf.get()), outlen, s);
+		b64pubkeys.push_back(s);
 	}
 
 	if (slen < 16)
 		return build_error("encrypt: Huh? Generated secret len of insufficient entropy size.", -1);
 
-	while (b64pubkey.size() > 0) {
-		outmsg += b64pubkey.substr(0, lwidth);
+	for (auto it : b64pubkeys) {
+		outmsg += marker::kex_begin;
+
+		while (it.size() > 0) {
+			outmsg += it.substr(0, lwidth);
+			outmsg += "\n";
+			it.erase(0, lwidth);
+		}
+
+		outmsg += marker::kex_end;
 		outmsg += "\n";
-		b64pubkey.erase(0, lwidth);
 	}
 
-	outmsg += marker::kex_end;
 	outmsg += marker::opmsg_databegin;
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
+	if (kdf_v123(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("encrypt: Error deriving key: ", -1);
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
 	if (!c_ctx.get())
@@ -413,8 +466,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	outmsg.insert(0, b64sig);
 	if (version == 1)
 		outmsg.insert(0, marker::version1);
-	else
+	else if (version == 2)
 		outmsg.insert(0, marker::version2);
+	else
+		outmsg.insert(0, marker::version3);
 	outmsg.insert(0, marker::opmsg_begin);
 	outmsg += marker::opmsg_end;
 
@@ -430,22 +485,26 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 // By splitting of the hdr and parsing it separately, this also speeds up
 // entire decrypt(), since optional tags are only searched within header
 // and not in the entire blob.
-int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
+int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_tag)
 {
 	string s = "";
 	string::size_type pos = string::npos, nl = string::npos;
 
-	kexdh = "";
+	kexdhs.clear();
+	kexdhs.reserve(3);
 	aad_tag.clear();
 
 	// For optional extensions later. Also check the pinned version number to match
 	// whats been found at the entry (before signature)
 	if ((pos = hdr.find(marker::cfg_num)) != string::npos) {
-		unsigned int v = 0;
-		if (sscanf(hdr.c_str() + pos + marker::cfg_num.size(), "%u:", &v) != 1)
+		unsigned int v = 0, e = 1;
+
+		// 'e' value might be there or not, so dont compare result like != 2
+		if (sscanf(hdr.c_str() + pos + marker::cfg_num.size(), "%u:%u:", &v, &e) < 1)
 			return build_error("parse_hdr: Invalid cfg-num tag.", -1);
 		if (v != version)
 			return build_error("parse_hdr: Version mismatch. Someone modified the message.", -1);
+		ec_domains = e;
 	}
 
 	// get AAD tag if any (only required by GCM mode ciphers and poly1305)
@@ -461,27 +520,27 @@ int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
 	}
 
 	if ((pos = hdr.find(marker::kex_id)) == string::npos)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (1).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (1).", -1);
 	pos += marker::kex_id.size();
 	nl = hdr.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (2).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (2).", -1);
 	s = hdr.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (3).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (3).", -1);
 	kex_id_hex = s;
 
 
 	// dst persona
 	if ((pos = hdr.find(marker::dst_id)) == string::npos)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (4).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (4).", -1);
 	pos += marker::dst_id.size();
 	nl = hdr.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (5).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (5).", -1);
 	s = hdr.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (6).", -1);
+		return build_error("parse_hdr: Not in OPMSG format (6).", -1);
 	dst_id_hex = s;
 
 	// new (ec)dh keys included for later (EC)DH kex?
@@ -490,9 +549,9 @@ int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
 		if ((pos = hdr.find(marker::ec_dh_begin)) == string::npos)
 			break;
 		if ((nl = hdr.find(marker::ec_dh_end, pos)) == string::npos)
-			return build_error("parse_hdr: Not in OPMSGv1/2 format (7)", -1);
+			return build_error("parse_hdr: Not in OPMSG format (7)", -1);
 		if (nl - pos > max_sane_string)
-			return build_error("parse_hdr: Not in OPMSGv1/2 format (8).", -1);
+			return build_error("parse_hdr: Not in OPMSG format (8).", -1);
 		newdh = hdr.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		hdr.erase(pos, nl + marker::ec_dh_end.size() - pos);
 		ecdh_keys.push_back(newdh);
@@ -500,21 +559,26 @@ int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
 			break;
 	}
 
+	if (ec_domains < 1 || ec_domains > 3 || (ecdh_keys.size() % ec_domains) != 0)
+		return build_error("parse_hdr: Invalid number of EC domains.", -1);
 
-	// the (EC)DH public part, optional. For "null" calgos, there is no kex.
-	if ((pos = hdr.find(marker::kex_begin)) == string::npos)
-		return 1;
+	for (;;) {
+		// the (EC)DH public part, optional. For "null" calgos, there is no kex.
+		if ((pos = hdr.find(marker::kex_begin)) == string::npos)
+			break;
 
-	if ((nl = hdr.find(marker::kex_end, pos)) == string::npos)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (9).", -1);
-	if (nl - pos > max_sane_string)
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (10).", -1);
-	string b64_kexdh = hdr.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
-	hdr.erase(pos, nl - pos + marker::kex_end.size());
-	b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
-	b64_decode(b64_kexdh, kexdh);
-	if (kexdh.empty())
-		return build_error("parse_hdr: Not in OPMSGv1/2 format (11).", -1);
+		if ((nl = hdr.find(marker::kex_end, pos)) == string::npos)
+			return build_error("parse_hdr: Not in OPMSG format (9).", -1);
+		if (nl - pos > max_sane_string)
+			return build_error("parse_hdr: Not in OPMSG format (10).", -1);
+		string b64_kexdh = hdr.substr(pos + marker::kex_begin.size(), nl - pos - marker::kex_begin.size());
+		hdr.erase(pos, nl - pos + marker::kex_end.size());
+		b64_kexdh.erase(remove(b64_kexdh.begin(), b64_kexdh.end(), '\n'), b64_kexdh.end());
+		b64_decode(b64_kexdh, s);
+		if (s.empty())
+			return build_error("parse_hdr: Invalid Kex Base64.", -1);
+		kexdhs.push_back(s);
+	}
 
 	return 1;
 }
@@ -525,10 +589,11 @@ int message::parse_hdr(string &hdr, string &kexdh, vector<char> &aad_tag)
 int message::decrypt(string &raw)
 {
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
-	PKEYbox *ec_dh = nullptr;
+	vector<PKEYbox *> ec_dh;
 	RSA *rsa = nullptr;
 	unsigned char iv[OPMSG_MAX_IV_LENGTH];
 	vector<char> aad_tag;
+	vector<string> kexdhs;
 	string kexdh = "";
 	unsigned int i = 0;
 	string s = "", iv_kdf = "", b64_aad_tag = "";
@@ -543,11 +608,14 @@ int message::decrypt(string &raw)
 	raw.erase(0, pos + marker::opmsg_begin.size());
 
 	version = 1;
-	// next must come "version=1" or "version=2", nuke it
+	// next must come "version=N" , nuke it
 	if ((pos = raw.find(marker::version1)) != 0) {
 		version = 2;
-		if ((pos = raw.find(marker::version2)) != 0)
-			return build_error("decrypt: Not in OPMSGv1/2 format (2). Need to update opmsg?", -1);
+		if ((pos = raw.find(marker::version2)) != 0) {
+			version = 3;
+			if ((pos = raw.find(marker::version3)) != 0)
+				return build_error("decrypt: Not in OPMSG format (2). Need to update opmsg?", -1);
+		}
 	}
 
 	raw.erase(0, pos + marker::version1.size());
@@ -555,16 +623,16 @@ int message::decrypt(string &raw)
 	// nuke OPMSg trailer, its also not part of signing. Do not accept junk after
 	// footer.
 	if ((pos = raw.find(marker::opmsg_end)) == string::npos || pos + marker::opmsg_end.size() != raw.size())
-		return build_error("decrypt: Not in OPMSGv1/2 format (3).", -1);
+		return build_error("decrypt: Not in OPMSG format (3).", -1);
 	raw.erase(pos, marker::opmsg_end.size());
 
 	// next must come signature b64 sigblob
 	if ((pos = raw.find(marker::sig_begin)) != 0 || (pos_sigend = raw.find(marker::sig_end)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (4).", -1);
+		return build_error("decrypt: Not in OPMSG format (4).", -1);
 
 	// weird or unreasonable large signature?
 	if (pos_sigend >= max_sane_string)
-		return build_error("decrypt: Not in OPMSGv1/2 format (5).", -1);
+		return build_error("decrypt: Not in OPMSG format (5).", -1);
 
 	string b64sig = raw.substr(marker::sig_begin.size(), pos_sigend - marker::sig_begin.size());
 	raw.erase(0, pos_sigend + marker::sig_end.size());
@@ -577,17 +645,17 @@ int message::decrypt(string &raw)
 	//
 
 	if ((pos = raw.find(marker::algos)) != 0)
-		return build_error("decrypt: Not in OPMSGv1/2 format (6).", -1);
+		return build_error("decrypt: Not in OPMSG format (6).", -1);
 
 	char b[5][64];
 	for (i = 0; i < 5; ++i)
 		memset(b[i], 0, sizeof(b[0]));
 	if (sscanf(raw.c_str() + marker::algos.size(), "%32[^:]:%32[^:]:%32[^:]:%32[^:]:%32[^\n]", b[0], b[1], b[2], b[3], b[4]) != 5)
-		return build_error("decrypt: Not in OPMSGv1/2 format (7).", -1);
+		return build_error("decrypt: Not in OPMSG format (7).", -1);
 
 	phash = b[0]; khash = b[1]; shash = b[2]; calgo = b[3];
 	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
-		return build_error("decrypt: Not in OPMSGv1/2 format (8). Invalid algo name. Need to update opmsg?", -1);
+		return build_error("decrypt: Not in OPMSG format (8). Invalid algo name. Need to update opmsg?", -1);
 
 	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
 
@@ -599,14 +667,14 @@ int message::decrypt(string &raw)
 
 	// src persona
 	if ((pos = raw.find(marker::src_id)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (9).", -1);
+		return build_error("decrypt: Not in OPMSG format (9).", -1);
 	pos += marker::src_id.size();
 	nl = raw.find("\n", pos);
 	if (nl == string::npos || nl - pos > max_sane_string)
-		return build_error("decrypt:: Not in OPMSGv1/2 format (10).", -1);
+		return build_error("decrypt:: Not in OPMSG format (10).", -1);
 	s = raw.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
-		return build_error("decrypt: Not in OPMSGv1/2 format (11).", -1);
+		return build_error("decrypt: Not in OPMSG format (11).", -1);
 	src_id_hex = s;
 
 	// for src persona, we only need native (RSA or EC) key for signature validation
@@ -638,13 +706,13 @@ int message::decrypt(string &raw)
 
 	string::size_type databegin = string::npos;
 	if ((databegin = raw.find(marker::opmsg_databegin)) == string::npos)
-		return build_error("decrypt: Not in OPMSGv1/2 format (12).", -1);
+		return build_error("decrypt: Not in OPMSG format (12).", -1);
 
 	string hdr = raw.substr(0, databegin);
 
 	// parse the remaining parts of the header
-	// Fills: kex_id_hex, dst_id_hex, kexdh, aad_tag
-	if (parse_hdr(hdr, kexdh, aad_tag) != 1)
+	// Fills: kex_id_hex, dst_id_hex, kexdhs, aad_tag
+	if (parse_hdr(hdr, kexdhs, aad_tag) != 1)
 		return build_error("decrypt: " + err, -1);
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
@@ -656,10 +724,11 @@ int message::decrypt(string &raw)
 
 	// import the new (EC)DH keys that shipped with the message
 	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
-		if (!src_persona->add_dh_pubkey(khash, *it))
-			it = ecdh_keys.erase(it);
+		vector<string> v(it, it + ec_domains);
+		if ((src_persona->add_dh_pubkey(khash, v)).empty())
+			it = ecdh_keys.erase(it, it + ec_domains);
 		else
-			++it;
+			it += ec_domains;
 	}
 
 	src_name = src_persona->get_name();
@@ -670,18 +739,30 @@ int message::decrypt(string &raw)
 		return 1;
 
 	// everything else have to have a kex
-	if (kexdh.empty())
+	if (kexdhs.empty())
 		return build_error("decrypt: Missing Kex tag for non-null encryption!", -1);
 
 	bool has_dh_key = (kex_id_hex != marker::rsa_kex_id);
 
 	if (has_dh_key) {
-		if (!(ec_dh = dst_persona->find_dh_key(kex_id_hex)))
+		ec_dh = dst_persona->find_dh_key(kex_id_hex);
+		if (ec_dh.empty())
 			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, 0);
-		if (!ec_dh->can_decrypt())
-			return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, 0);
-		if (peer_isolation && !ec_dh->matches_peer_id(src_id_hex))
-			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh->get_peer_id() +
+		for (auto it : ec_dh) {
+			if (!it->can_decrypt())
+				return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, 0);
+		}
+
+		// We could make this an exact == match, but maybe peer is only using one of the many keys
+		// from the cross-domain Kex (due to downgrading opmsg version or alike), so we also accept
+		// less kexdh's than we have actually in the queue. This is not a security risk. Its only that
+		// the peer (verified by signature) decided to use fewer EC domains than what we offered.
+		// Maybe in future, this could be enforced to be an exact match.
+		if (ec_dh.size() < kexdhs.size())
+			return build_error("decrypt: Mismatch in number of ECDH domains.", -1);
+
+		if (peer_isolation && !ec_dh[0]->matches_peer_id(src_id_hex))
+			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh[0]->get_peer_id() +
 			                   ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again\n"
 			                   "or set peer_isolation=0 in config file.\n", -1);
 	}
@@ -690,6 +771,7 @@ int message::decrypt(string &raw)
 	int slen = 0;
 	unique_ptr<unsigned char[]> secret(nullptr);
 	if (!has_dh_key) {
+		kexdh = kexdhs[0];
 		if (!dst_persona->can_decrypt())
 			return build_error("decrypt: No private PKEY for persona " + dst_persona->get_id(), 0);
 		// kexdh contains pub encrypted secret, not DH BIGNUM
@@ -719,58 +801,75 @@ int message::decrypt(string &raw)
 		// The input secret buffer that was sent, have had a fixed size of this:
 		slen = OPMSG_RSA_ENCRYPTED_KEYLEN;
 	} else {
-		// do the (EC)DH kex
-		unique_ptr<BIGNUM, BIGNUM_del> bn(BN_bin2bn(reinterpret_cast<const unsigned char *>(kexdh.c_str()), kexdh.size(), nullptr), BN_free);
-		if (!bn.get())
-			return build_error("decrypt::BN_bin2bn: ", -1);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> peer_key(EVP_PKEY_new(), EVP_PKEY_free);
-		if (!peer_key.get())
-			return build_error("decrypt: OOM", -1);
+		vector<unsigned char> secret_v;
+		secret_v.reserve(0x1000);
 
-		// BN is a BN pubkey in DH case...
-		if (EVP_PKEY_base_id(ec_dh->priv) == EVP_PKEY_DH) {
-			DH *dh = DH_new();
-			if (!dh)
+		// could also be ec_dh.size(), but see above comment for accepting fewer Kex'es
+		for (unsigned int i = 0; i < kexdhs.size(); ++i) {
+			kexdh = kexdhs[i];
+
+			// do the (EC)DH kex
+			unique_ptr<BIGNUM, BIGNUM_del> bn(BN_bin2bn(reinterpret_cast<const unsigned char *>(kexdh.c_str()), kexdh.size(), nullptr), BN_free);
+			if (!bn.get())
+				return build_error("decrypt::BN_bin2bn: ", -1);
+			unique_ptr<EVP_PKEY, EVP_PKEY_del> peer_key(EVP_PKEY_new(), EVP_PKEY_free);
+			if (!peer_key.get())
 				return build_error("decrypt: OOM", -1);
-			DH_set0_key(dh, bn.release(), nullptr);
-			EVP_PKEY_assign_DH(peer_key.get(), dh);
-		// ...and a compressed EC_POINT pubkey in ECDH case
-		} else {
-			unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh->priv), EC_KEY_free);
-			if (!my_ec.get())
-				return build_error("decrypt::EVP_PKEY_get1_EC_KEY:", -1);
-			unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(EC_KEY_get0_group(my_ec.get()), bn.get(), nullptr, nullptr), EC_POINT_free);
-			if (!ecp.get())
-				return build_error("decrypt::EC_POINT_bn2point:", -1);
-			unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_dup(my_ec.get()), EC_KEY_free);
-			if (!peer_ec.get())
-				return build_error("decrypt: OOM", -1);
-			EC_KEY_set_private_key(peer_ec.get(), nullptr);
-			if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
-				return build_error("decrypt::EC_KEY_set_public_key:", -1);
-			EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
+
+			// BN is a BN pubkey in DH case...
+			if (EVP_PKEY_base_id(ec_dh[i]->priv) == EVP_PKEY_DH) {
+				DH *dh = DH_new();
+				if (!dh)
+					return build_error("decrypt: OOM", -1);
+				DH_set0_key(dh, bn.release(), nullptr);
+				EVP_PKEY_assign_DH(peer_key.get(), dh);
+			// ...and a compressed EC_POINT pubkey in ECDH case
+			} else {
+				unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh[i]->priv), EC_KEY_free);
+				if (!my_ec.get())
+					return build_error("decrypt::EVP_PKEY_get1_EC_KEY:", -1);
+				unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(EC_KEY_get0_group(my_ec.get()), bn.get(), nullptr, nullptr), EC_POINT_free);
+				if (!ecp.get())
+					return build_error("decrypt::EC_POINT_bn2point:", -1);
+				unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_dup(my_ec.get()), EC_KEY_free);
+				if (!peer_ec.get())
+					return build_error("decrypt: OOM", -1);
+				EC_KEY_set_private_key(peer_ec.get(), nullptr);
+				if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
+					return build_error("decrypt::EC_KEY_set_public_key:", -1);
+				EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
+			}
+
+			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh[i]->priv, nullptr), EVP_PKEY_CTX_free);
+			if (!ctx.get() || EVP_PKEY_derive_init(ctx.get()) != 1)
+				return build_error("decrypt::EVP_PKEY_derive_init: ", -1);
+			if (EVP_PKEY_derive_set_peer(ctx.get(), peer_key.get()) != 1)
+				return build_error("decrypt::EVP_PKEY_derive_set_peer: ", -1);
+
+			// find len
+			size_t len = 0;
+			if (EVP_PKEY_derive(ctx.get(), nullptr, &len) != 1)
+				return build_error("decrypt::EVP_PKEY_derive: ", -1);
+			if ((unsigned int)slen > max_sane_string || len > max_sane_string)
+				return build_error("decrypt: Insane large derived keylen.", -1);
+			vector<unsigned char> secret_i(len, 0);
+			if (EVP_PKEY_derive(ctx.get(), &secret_i[0], &len) != 1)
+				return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+			slen += (int)len;
+			secret_v.insert(secret_v.end(), secret_i.begin(), secret_i.end());
 		}
 
-		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh->priv, nullptr), EVP_PKEY_CTX_free);
-		if (!ctx.get() || EVP_PKEY_derive_init(ctx.get()) != 1)
-			return build_error("decrypt::EVP_PKEY_derive_init: ", -1);
-		if (EVP_PKEY_derive_set_peer(ctx.get(), peer_key.get()) != 1)
-			return build_error("decrypt::EVP_PKEY_derive_set_peer: ", -1);
+		if ((unsigned int)slen != secret_v.size() || (unsigned int)slen > max_sane_string)
+			return build_error("decrypt: Huh? Mismatch in calculated secret sizes.", -1);
 
-		// find len
-		size_t len = 0;
-		if (EVP_PKEY_derive(ctx.get(), nullptr, &len) != 1)
-			return build_error("decrypt::EVP_PKEY_derive: ", -1);
-		if (len > max_sane_string)
-			return build_error("decrypt: Insane large derived keylen.", -1);
-		secret.reset(new (nothrow) unsigned char[len]);
-		if (!secret.get() || EVP_PKEY_derive(ctx.get(), secret.get(), &len) != 1)
-			return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
-		slen = (int)len;
+		secret.reset(new (nothrow) unsigned char[slen]);
+		if (!secret.get())
+			return build_error("decrypt: OOM", -1);
+		memcpy(secret.get(), &secret_v[0], slen);
 	}
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v12(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
+	if (kdf_v123(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
 		return build_error("decrypt: Error deriving key: ", -1);
 
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);

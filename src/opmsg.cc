@@ -376,10 +376,10 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 
 	if (!config::native_crypt && config::calgo != "null") {
 		for (auto i = dst_p->first_key(); i != dst_p->end_key(); i = dst_p->next_key(i)) {
-			if (i->second->can_encrypt()) {
+			if (!i->second.empty() && i->second[0]->can_encrypt()) {
 				// only keys that peer sent us for import, so ignore (EC)DH keys
 				// where we also store the private half
-				if (linked_to_myself && i->second->can_decrypt())
+				if (linked_to_myself && i->second[0]->can_decrypt())
 					continue;
 				kex_id = i->first;
 				break;
@@ -396,12 +396,14 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	msg.kex_id(kex_id);
 
 	// Add new (EC)DH keys for upcoming Kex in future
-	vector<PKEYbox *> newdh;
+	vector<string> newdh;
 	for (int i = 0; src_p->can_kex_gen() && i < config::new_dh_keys; ++i) {
-		PKEYbox *pbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
-		if (pbox) {
-			newdh.push_back(pbox);
-			msg.ecdh_keys.push_back(pbox->pub_pem);
+		vector<PKEYbox *> vpbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
+		if (vpbox.size() > 0) {
+			newdh.push_back(vpbox[0]->hex);
+			msg.ec_domains = vpbox.size();
+			for (auto j = vpbox.begin(); j != vpbox.end(); ++j)
+				msg.ecdh_keys.push_back((*j)->pub_pem);
 		}
 	}
 
@@ -415,9 +417,9 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		int save_errno = errno;
 
 		for (auto i = newdh.begin(); i != newdh.end(); ++i) {
-			src_p->del_dh_pub((*i)->hex);
-			src_p->del_dh_priv((*i)->hex);
-			src_p->del_dh_id((*i)->hex);
+			src_p->del_dh_pub(*i);
+			src_p->del_dh_priv(*i);
+			src_p->del_dh_id(*i);
 		}
 
 		if (r1 < 1) {
@@ -510,7 +512,7 @@ int do_decrypt()
 		estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 		if (msg.get_srcname().size() > 0)
 			estr<<" ("<<msg.get_srcname()<<")";
-		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys.\n\n";
+		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys from "<<msg.ec_domains<<" domains.\n\n";
 		eflush();
 
 		if (write_msg(config::outfile, s, found_one) < 0) {
@@ -592,7 +594,7 @@ int do_newpersona(const string &name, const string &type)
 			return -1;
 		}
 	} else {
-		if (ks.gen_ec(pub, priv) < 0) {
+		if (ks.gen_ec(pub, priv, config::curve_nids[0]) < 0) {
 			estr<<prefix<<"ERROR: generating new EC keys: "<<ks.why()<<endl; eflush();
 			return -1;
 		}
@@ -919,6 +921,12 @@ int main(int argc, char **argv)
 		eflush();
 	}
 
+	// should not really happen
+	if (config::curve_nids.empty() || config::curves.empty()) {
+		estr<<prefix<<"ERROR: Huh? No ECC curves defined.\n"; eflush();
+		return -1;
+	}
+
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_int;
@@ -1123,7 +1131,7 @@ int main(int argc, char **argv)
 		r = do_newdhparams();
 		break;
 	case CMODE_NEWECP:
-		estr<<prefix<<"creating new EC persona (curve "<<config::curve<<")\n\n"; eflush();
+		estr<<prefix<<"creating new EC persona (curve "<<config::curves[0]<<")\n\n"; eflush();
 		r = do_new_ec_persona(name);
 		break;
 	case CMODE_IMPORT:

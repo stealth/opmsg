@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2016 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -22,6 +22,8 @@
 #include <algorithm>
 #include <fstream>
 #include <string>
+#include <vector>
+#include <map>
 #include <cstring>
 #include <cstdlib>
 #include "numbers.h"
@@ -59,20 +61,8 @@ std::string outfile = "/dev/stdout";
 std::string idformat = "split";
 std::string my_id = "";
 
-
-
-#if defined NID_brainpoolP512t1 && !defined HAVE_BORINGSSL
-int curve_nid = NID_brainpoolP320r1;
-std::string curve = "brainpoolP320r1";
-#else
-
-#warning "Your libcrypto library is outdated and has no support for Brainpool EC curves."
-#warning "Falling back to NIST curve secp521r. You should consider cloning libressl or"
-#warning "openssl git and build your own libcrypto setup in order to get full ECC support."
-
-int curve_nid = NID_secp521r1;
-std::string curve = "secp521r1";
-#endif
+std::vector<int> curve_nids;
+std::vector<std::string> curves;
 
 bool burn = 0;
 
@@ -86,8 +76,9 @@ using namespace std;
 
 int parse_config(const string &cfgbase)
 {
-	ifstream fin{cfgbase + "/config", ios::in};
+	map<string, int> seen_ec;
 
+	ifstream fin{cfgbase + "/config", ios::in};
 	if (!fin)
 		return -1;
 
@@ -149,31 +140,85 @@ int parse_config(const string &cfgbase)
 			config::version = 1;
 		else if (sline == "version=2")
 			config::version = 2;
+		else if (sline == "version=3")
+			config::version = 3;
 		else if (sline == "curve=secp521r1") {
-			config::curve = "secp521r1";
-			config::curve_nid = NID_secp521r1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("secp521r1");
+			config::curve_nids.push_back(NID_secp521r1);
+			seen_ec[sline] = 1;
 #ifdef NID_brainpoolP512t1
 		} else if (sline == "curve=brainpoolP320r1") {
-			config::curve = "brainpoolP320r1";
-			config::curve_nid = NID_brainpoolP320r1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP320r1");
+			config::curve_nids.push_back(NID_brainpoolP320r1);
+			seen_ec[sline] = 1;
 		} else if (sline == "curve=brainpoolP384r1") {
-			config::curve = "brainpoolP384r1";
-			config::curve_nid = NID_brainpoolP384r1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP384r1");
+			config::curve_nids.push_back(NID_brainpoolP384r1);
+			seen_ec[sline] = 1;
 		} else if (sline == "curve=brainpoolP512r1") {
-			config::curve = "brainpoolP512r1";
-			config::curve_nid = NID_brainpoolP512r1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP512r1");
+			config::curve_nids.push_back(NID_brainpoolP512r1);
+			seen_ec[sline] = 1;
 		} else if (sline == "curve=brainpoolP320t1") {
-			config::curve = "brainpoolP320t1";
-			config::curve_nid = NID_brainpoolP320t1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP320t1");
+			config::curve_nids.push_back(NID_brainpoolP320t1);
+			seen_ec[sline] = 1;
 		} else if (sline == "curve=brainpoolP384t1") {
-			config::curve = "brainpoolP384t1";
-			config::curve_nid = NID_brainpoolP384t1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP384t1");
+			config::curve_nids.push_back(NID_brainpoolP384t1);
+			seen_ec[sline] = 1;
 		} else if (sline == "curve=brainpoolP512t1") {
-			config::curve = "brainpoolP512t1";
-			config::curve_nid = NID_brainpoolP512t1;
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("brainpoolP512t1");
+			config::curve_nids.push_back(NID_brainpoolP512t1);
+			seen_ec[sline] = 1;
 #endif
+		// bitcoin curve
+		} else if (sline == "curve=secp256k1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("secp256k1");
+			config::curve_nids.push_back(NID_secp256k1);
+			seen_ec[sline] = 1;
 		}
+
+		// no more than 3 curves
+		if (config::curves.size() > 3) {
+			config::curves.pop_back();
+			config::curve_nids.pop_back();
+		}
+
 	}
+
+	// for version < 3, only one curve
+	if (config::version < 3 && config::curves.size() > 1) {
+		config::curves.erase(config::curves.begin() + 1, config::curves.end());
+		config::curve_nids.erase(config::curve_nids.begin() + 1, config::curve_nids.end());
+	}
+
+	if (config::curves.empty()) {
+#if defined NID_brainpoolP512t1 && !defined HAVE_BORINGSSL
+		config::curve_nids.push_back(NID_brainpoolP320r1);
+		config::curves.push_back("brainpoolP320r1");
+#else
+		config::curve_nids.push_back(NID_secp521r1);
+		config::curves.push_back("secp521r1");
+#endif
+	}
+
 	return 0;
 }
 

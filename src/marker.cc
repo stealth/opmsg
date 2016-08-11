@@ -50,6 +50,7 @@ string kex_end = "-----END KEX-----\n";
 
 string version1 = "version=1\n";
 string version2 = "version=2\n";
+string version3 = "version=3\n";
 
 string src_id = "src-id=";
 string dst_id = "dst-id=";

@@ -19,6 +19,7 @@
  */
 
 #include <map>
+#include <vector>
 #include <string>
 #include <cstdio>
 #include <cstring>
@@ -253,15 +254,18 @@ string build_error(const string &msg)
 }
 
 
+#if 0
+
 // for debugging/inspection
 void hex_dump(const char *buf, size_t blen)
 {
-	fprintf(stderr, "\n");
+	fprintf(stderr, "\n(%d)\n", blen);
 	for (size_t i = 0; i < blen; ++i)
 		fprintf(stderr, "%02x ", buf[i] & 0xff);
 	fprintf(stderr, "\n");
 }
 
+#endif
 
 } // namespace
 
