@@ -77,7 +77,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.73 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.74 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -512,7 +512,7 @@ int do_decrypt()
 		estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 		if (msg.get_srcname().size() > 0)
 			estr<<" ("<<msg.get_srcname()<<")";
-		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH keys from "<<msg.ec_domains<<" domains.\n\n";
+		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH key(s) from "<<msg.ec_domains<<" domain(s).\n\n";
 		eflush();
 
 		if (write_msg(config::outfile, s, found_one) < 0) {
