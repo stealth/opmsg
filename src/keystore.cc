@@ -1113,9 +1113,9 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 
 
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
-		for (auto it : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
-			string s = tmpdir + it;
-			unlink(s.c_str());
+		for (const string &s : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
+			string s2 = tmpdir + s;
+			unlink(s2.c_str());
 		}
 		unlink(peerfile.c_str());
 		rmdir(tmpdir.c_str());
@@ -1296,9 +1296,9 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 	}
 
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
-		for (auto it : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
-			string s = tmpdir + it;
-			unlink(s.c_str());
+		for (const string &s : vector<string>{"/dh.pub.pem", "/dh.priv.pem", "/dh.pub.1.pem", "/dh.priv.1.pem", "/dh.pub.2.pem", "/dh.priv.2.pem"}) {
+			string s2 = tmpdir + s;
+			unlink(s2.c_str());
 		}
 		rmdir(tmpdir.c_str());
 		return build_error("add_dh_key: Error storing (EC)DH pubkey " + hex, v0);
@@ -1352,8 +1352,8 @@ int persona::del_dh_priv(const string &hex)
 
 	int j = 0;
 	struct stat st = {0};
-	for (auto it : vector<string>{"/dh.priv.pem", "/dh.priv.1.pem", "/dh.priv.2.pem"}) {
-		string file = base + it;
+	for (const string &s : vector<string>{"/dh.priv.pem", "/dh.priv.1.pem", "/dh.priv.2.pem"}) {
+		string file = base + s;
 		int fd = open(file.c_str(), O_RDWR);
 
 		// ENOENT errors for (possibly not existing) subkeys are OK
@@ -1402,8 +1402,8 @@ int persona::del_dh_pub(const string &hex)
 		return 0;
 
 	string file = cfgbase + "/" + id + "/" + hex;
-	for (auto it : vector<string>{"/dh.pub.pem", "/dh.pub.1.pem", "/dh.pub.2.pem"})
-		unlink((file + it).c_str());
+	for (const string &s : vector<string>{"/dh.pub.pem", "/dh.pub.1.pem", "/dh.pub.2.pem"})
+		unlink((file + s).c_str());
 
 	if (keys.count(hex) > 0) {
 		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it) {
