@@ -351,7 +351,7 @@ various papers, it is possible by evil EC-curve designers to choose the curve do
 in a way that places backdoors into the curve. That is, by knowing certain seeding parameters,
 it is possible to create legit looking curves which fullfil all requirements, yet producing
 weak secrets, if the attacker knows the evil seeding bits. It is not just a theroretical issue
-that evil committee members place backdoors into standards (take the dual-EC-DRBG as a warining).
+that evil committee members place backdoors into standards (take the dual-EC-DRBG as a warning).
 
 The idea behind cross-domain ECDH is that, even if we assume all EC curves to contain
 backdoored parameters, the knowledge about it is so well protected that it is not shared
