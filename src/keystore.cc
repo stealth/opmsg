@@ -999,7 +999,7 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	vector<PKEYbox *> v0;
 	string hex = "", h = "";
 
-	if (ptype == marker::ec) {
+	if (ptype == marker::ec || config::ecdh_rsa) {
 		err = "persona::gen_kex_key::";
 		// for each defined curve
 		for (unsigned int i = 0; i < config::curve_nids.size(); ++i) {

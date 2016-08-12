@@ -29,6 +29,7 @@ Features:
   `cat`, `shred -u` and `ls` on the cmdline
 * seamless mutt integration
 * Key format suitable for easy use with QR-codes
+* optional cross-domain ECDH Kex
 
 
 _opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto libraries.
@@ -197,6 +198,7 @@ any further switches for encryption or alike. EC personas use the brainpool curv
 (RFC 5639). The NIST curve `secp521r1` may also be used as a fallback if your
 libcrypto is outdated, but its recommended to use the brainpool curves which
 dont keep any secrets about how their group parameters were selected.
+Also see the chapter about cross-domain ECDH down below.
 
 
 Persona linking
@@ -318,6 +320,57 @@ As of `version=1.3` there is a `--burn` option that nukes used DH
 keys from storage. Be aware: you can only decrypt the message once.
 Once the message is successfully decrypted, the (EC)DH key that was used
 is overwritten and deleted from storage.
+
+
+cross-domain ECDH
+-----------------
+
+You may skip this section if you are not really paranoid about potentially
+backdoored EC curves and how to cope with it.
+
+There is a (yet experimental) feature, which may be enabled by using protocol version 3
+and specifying more than one EC curve in the config:
+
+
+```
+...
+version=3
+...
+curve=brainpoolP384r1
+curve=secp256k1
+...
+```
+
+Up to three different curves may be specified. For each curve specified, a dedicated ECDH
+handshake is made. That is, the key used for encrypting the message is derived from more
+than one ECDH Kex. The 'common' ECDH handshake, as seen in all other protocols like TLS etc.,
+uses one curve. _opmsg_ by default also uses one curve. But you can use more than one, and
+here is why: There is an endless discussion about which curve can be trusted. Some prefer
+the NIST curves, some prefer Brainpool and some prefer even other curves. As shown in
+various papers, it is possible by evil EC-curve designers to choose the curve domain parameters
+in a way that places backdoors into the curve. That is, by knowing certain seeding parameters,
+it is possible to create legit looking curves which fullfil all requirements, yet producing
+weak secrets, if the attacker knows the evil seeding bits. It is not just a theroretical issue
+that evil committee members place backdoors into standards (take the dual-EC-DRBG as a warining).
+
+The idea behind cross-domain ECDH is that, even if we assume all EC curves to contain
+backdoored parameters, the knowledge about it is so well protected that it is not shared
+across each other. Would the NIST share their backdoor seedings with the russians or vice versa?
+Certainly they wouldn't.
+In other words, each backdooring party would keep their evil seeding
+for themselfs. By using cross-domain ECDH, we exploit this fact and can negotiate a strong secret,
+even with potentially backdoored EC curves.
+
+This is for the negotiated session keys. The persona keys (used for signing) are still generated using a single curve.
+But you may use cross-doamin ECDH with RSA personas now, by specifying
+
+```
+...
+ecdh-rsa
+...
+```
+
+in the config.
 
 
 MUA integration

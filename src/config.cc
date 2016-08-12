@@ -68,6 +68,8 @@ bool burn = 0;
 
 bool nodos2unix = 0;
 
+bool ecdh_rsa = 0;
+
 std::string cfgbase = ".opmsg";
 
 }
@@ -142,12 +144,57 @@ int parse_config(const string &cfgbase)
 			config::version = 2;
 		else if (sline == "version=3")
 			config::version = 3;
+		else if (sline == "ecdh-rsa")
+			config::ecdh_rsa = 1;
 		else if (sline == "curve=secp521r1") {
 			if (seen_ec.count(sline) > 0)
 				continue;
 			config::curves.push_back("secp521r1");
 			config::curve_nids.push_back(NID_secp521r1);
 			seen_ec[sline] = 1;
+		} else if (sline == "curve=secp384r1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("secp384r1");
+			config::curve_nids.push_back(NID_secp384r1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect283k1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect283k1");
+			config::curve_nids.push_back(NID_sect283k1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect283r1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect283r1");
+			config::curve_nids.push_back(NID_sect283r1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect409k1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect409k1");
+			config::curve_nids.push_back(NID_sect409k1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect409r1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect409r1");
+			config::curve_nids.push_back(NID_sect409r1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect571k1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect571k1");
+			config::curve_nids.push_back(NID_sect571k1);
+			seen_ec[sline] = 1;
+		} else if (sline == "curve=sect571r1") {
+			if (seen_ec.count(sline) > 0)
+				continue;
+			config::curves.push_back("sect571r1");
+			config::curve_nids.push_back(NID_sect571r1);
+			seen_ec[sline] = 1;
+
 #ifdef NID_brainpoolP512t1
 		} else if (sline == "curve=brainpoolP320r1") {
 			if (seen_ec.count(sline) > 0)

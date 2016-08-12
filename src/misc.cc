@@ -143,7 +143,7 @@ void print_calgos(ostringstream &os)
 	map<string, int> m{
 	        {"bfcfb", 0}, {"bfcbc", 0},
 	        {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 0}, {"aes256ctr", 0},
-	        {"aes128cfb", 0}, {"aes128cbc", 1}, {"aes128gcm", 0}, {"aes128ctr", 0},
+	        {"aes128cfb", 0}, {"aes128cbc", 0}, {"aes128gcm", 1}, {"aes128ctr", 0},
 	        {"cast5cfb", 0}, {"cast5cbc", 0},
 #ifdef CHACHA20
 		{"chacha20-poly1305", 0},
@@ -151,12 +151,28 @@ void print_calgos(ostringstream &os)
 	        {"null", 0}
 	};
 
-	for (auto i = m.begin(); i != m.end(); ++i) {
-		os<<prefix<<i->first;
-		if (i->second)
+	map<string, int> ec{
+	        {"secp384r1", 0}, {"secp521r1", 0},
+	        {"secp256k1", 0},	// BTC curve
+	        {"sect283k1", 0}, {"sect283r1", 0},
+	        {"sect409k1", 0}, {"sect409r1", 0},
+	        {"sect571k1", 0},{"sect571r1", 0},
+#ifdef NID_brainpoolP512t1
+	        {"brainpoolP320r1", 0}, {"brainpoolP384r1", 0}, {"brainpoolP512r1", 0},
+	        {"brainpoolP320t1", 0}, {"brainpoolP384t1", 0}, {"brainpoolP512t1", 0}
+#endif
+	};
+
+	for (auto&& it : m) {
+		os<<prefix<<it.first;
+		if (it.second)
 			os<<" (default)";
 		os<<endl;
 	}
+
+	os<<endl<<prefix<<"Supported EC curves:\n\n";
+	for (auto&& it : ec)
+		os<<prefix<<it.first<<endl;
 }
 
 
