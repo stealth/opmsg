@@ -381,13 +381,13 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (slen < 16)
 		return build_error("encrypt: Huh? Generated secret len of insufficient entropy size.", -1);
 
-	for (auto it : b64pubkeys) {
+	for (string &s : b64pubkeys) {
 		outmsg += marker::kex_begin;
 
-		while (it.size() > 0) {
-			outmsg += it.substr(0, lwidth);
+		while (s.size() > 0) {
+			outmsg += s.substr(0, lwidth);
 			outmsg += "\n";
-			it.erase(0, lwidth);
+			s.erase(0, lwidth);
 		}
 
 		outmsg += marker::kex_end;
