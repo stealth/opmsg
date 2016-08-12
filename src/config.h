@@ -47,6 +47,8 @@ extern bool burn;
 
 extern bool nodos2unix;
 
+extern bool ecdh_rsa;
+
 }
 
 int parse_config(const std::string &);
