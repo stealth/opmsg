@@ -724,6 +724,7 @@ int message::decrypt(string &raw)
 
 	// import the new (EC)DH keys that shipped with the message
 	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
+		// ec_domains validity checked in parse_hdr()
 		vector<string> v(it, it + ec_domains);
 		if ((src_persona->add_dh_pubkey(khash, v)).empty())
 			it = ecdh_keys.erase(it, it + ec_domains);
@@ -818,6 +819,8 @@ int message::decrypt(string &raw)
 
 			// BN is a BN pubkey in DH case...
 			if (EVP_PKEY_base_id(ec_dh[i]->priv) == EVP_PKEY_DH) {
+				if (i > 0)
+					return build_error("decrypt: Huh? No more than 1 DH key in Kex allowed.", -1);
 				DH *dh = DH_new();
 				if (!dh)
 					return build_error("decrypt: OOM", -1);
