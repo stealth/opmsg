@@ -358,12 +358,22 @@ int main(int argc, char **argv, char **envp)
 			unlink(tmp_p.c_str());
 		if (WIFEXITED(status)) {
 			status = WEXITSTATUS(status);
-			if (status == 0 && has_opmsg) {
-				fprintf(stderr, "\n[GNUPG:] SIG_ID KEEPAWAYFROMFIRE 1970-01-01 0000000000"
-				                "\n[GNUPG:] GOODSIG 7350735073507350 opmsg"
-				                "\n[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 1970-01-01 00000000000"
-				                " 0 4 0 1 8 01 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-				                "\n[GNUPG:] TRUST_ULTIMATE\n");
+
+			// Add some success message in case of success, to make "pgp_decryption_okay" happy
+			if (status == 0) {
+				string mua = "unknown";
+				if (getenv("OPMUX_MUA") != nullptr)
+					mua = getenv("OPMUX_MUA");
+
+				// thunderbird enigmail is happy with the following:
+				if (mua != "mutt" && has_opmsg) {
+					fprintf(stderr, "\n[GNUPG:] SIG_ID KEEPAWAYFROMFIRE 1970-01-01 0000000000"
+					                "\n[GNUPG:] GOODSIG 7350735073507350 opmsg"
+					                "\n[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 1970-01-01 00000000000"
+					                " 0 4 0 1 8 01 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+							"\n[GNUPG:] TRUST_ULTIMATE\n");
+				}
+				fprintf(stderr, "\nopmux: SUCCESS.\n");
 			}
 			return status;
 		}

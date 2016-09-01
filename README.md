@@ -396,6 +396,10 @@ set pgp_encrypt_sign_command="/usr/local/bin/opmsg --encrypt '%r' -i %f"
 set pgp_encrypt_only_command="/usr/local/bin/opmsg --encrypt '%r' -i %f"
 set pgp_decrypt_command="/usr/local/bin/opmsg --decrypt -i %f"
 set pgp_verify_command="/usr/local/bin/opmsg --decrypt -i %f"
+
+# or set to "^opmsg: SUCCESS\.$" - only required for newer mutt versions
+#unset pgp_decryption_okay
+
 ```
 
 and work with your mails as you would it with _PGP/GPG_ before. If you
@@ -408,16 +412,21 @@ But theres also another option: Using _opmux_:
 ```
 set pgp_long_ids
 
-set pgp_decode_command="/usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
-set pgp_verify_command="/usr/local/bin/opmux --quiet --batch --output - --verify %s %f"
-set pgp_decrypt_command="/usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
+# OPMUX_MUA env setting is optional and only required if you use 'pgp_decryption_okay' in newer mutts
 
-set pgp_encrypt_only_command="/usr/local/bin/opmux --batch --quiet --output - --encrypt \
+set pgp_decode_command="OPMUX_MUA=mutt /usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
+set pgp_verify_command="OPMUX_MUA=mutt /usr/local/bin/opmux --quiet --batch --output - --verify %s %f"
+set pgp_decrypt_command="OPMUX_MUA=mutt /usr/local/bin/opmux --passphrase-fd 0 --quiet --batch --output - %f"
+
+set pgp_encrypt_only_command="OPMUX_MUA=mutt /usr/local/bin/opmux --batch --quiet --output - --encrypt \
                               --textmode --armor --always-trust -r '%r' %f"
-set pgp_encrypt_sign_command="/usr/local/bin/opmux --passphrase-fd 0 --batch --quiet --textmode \
+set pgp_encrypt_sign_command="OPMUX_MUA=mutt /usr/local/bin/opmux --passphrase-fd 0 --batch --quiet --textmode \
                   --output - --encrypt --sign %?a?-u %a? --armor --always-trust -r '%r' %f"
 
-set pgp_list_pubring_command="/usr/local/bin/opmux --batch --quiet --with-colons --list-keys %r"
+set pgp_list_pubring_command="OPMUX_MUA=mutt /usr/local/bin/opmux --batch --quiet --with-colons --list-keys %r"
+
+# Be sure to not override it later on. This regex may also be unset.
+set pgp_decryption_okay="^opmux: SUCCESS\.$"
 
 ```
 
