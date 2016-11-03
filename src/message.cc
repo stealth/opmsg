@@ -817,7 +817,7 @@ int message::decrypt(string &raw)
 			if (!peer_key.get())
 				return build_error("decrypt: OOM", -1);
 
-			// BN is a BN pubkey in DH case...
+			// bn is a BN pubkey in DH case...
 			if (EVP_PKEY_base_id(ec_dh[i]->priv) == EVP_PKEY_DH) {
 				if (i > 0)
 					return build_error("decrypt: Huh? No more than 1 DH key in Kex allowed.", -1);

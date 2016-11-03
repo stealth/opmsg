@@ -331,12 +331,13 @@ int main(int argc, char **argv, char **envp)
 		bool has_opmsg = 0;
 		string msg = "", tmp_p = "";
 		int r = read_msg(infile, tmp_p, msg);
+
+		// w/o newline, so opmsg could erase \r which might have erroneously been
+		// inserted by MUAs
 		if (r == 0)
 			has_opmsg = (msg.find("-----BEGIN OPMSG-----") != string::npos);
 
 		if ((pid = fork()) == 0) {
-			// w/o newline, so opmsg could erase \r which might have erroneously been
-			// inserted by MUAs
 			if (has_opmsg) {
 				char *opmsg_d[] = {opmsg, dec, in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
 				int idx = 3;
