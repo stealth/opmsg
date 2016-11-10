@@ -596,6 +596,7 @@ int message::decrypt(string &raw)
 	vector<string> kexdhs;
 	string kexdh = "";
 	unsigned int i = 0;
+	int ecode = 0;
 	string s = "", iv_kdf = "", b64_aad_tag = "";
 	size_t n = 0;
 
@@ -821,11 +822,17 @@ int message::decrypt(string &raw)
 			if (EVP_PKEY_base_id(ec_dh[i]->priv) == EVP_PKEY_DH) {
 				if (i > 0)
 					return build_error("decrypt: Huh? No more than 1 DH key in Kex allowed.", -1);
-				DH *dh = DH_new();
-				if (!dh)
+				DH *tmpdh = EVP_PKEY_get1_DH(ec_dh[i]->priv);	// older OpenSSL lacking get0
+				if (!tmpdh)
+					return build_error("decrypt: EVP_PKEY_get1_DH return NULL.", -1);
+				unique_ptr<DH, DH_del> dh(DHparams_dup(tmpdh), DH_free);
+				DH_free(tmpdh);
+				if (!dh.get())
 					return build_error("decrypt: OOM", -1);
-				DH_set0_key(dh, bn.release(), nullptr);
-				EVP_PKEY_assign_DH(peer_key.get(), dh);
+				if (DH_check_pub_key(dh.get(), bn.get(), &ecode) != 1)
+					return build_error("decrypt: DH_check_pub_key failed.", -1);
+				DH_set0_key(dh.get(), bn.release(), nullptr);
+				EVP_PKEY_assign_DH(peer_key.get(), dh.release());
 			// ...and a compressed EC_POINT pubkey in ECDH case
 			} else {
 				unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh[i]->priv), EC_KEY_free);
@@ -840,6 +847,8 @@ int message::decrypt(string &raw)
 				EC_KEY_set_private_key(peer_ec.get(), nullptr);
 				if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
 					return build_error("decrypt::EC_KEY_set_public_key:", -1);
+				if (EC_KEY_check_key(peer_ec.get()) != 1)
+					return build_error("decrypt::EC_KEY_check_key:", -1);
 				EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
 			}
 
