@@ -48,7 +48,7 @@ namespace opmsg {
 using namespace std;
 
 
-static string::size_type lwidth = 80, max_sane_string = 0x1000;
+static string::size_type lwidth = 80, max_sane_string = 0x1000, min_entropy_bytes = 16;
 
 
 //                                                                                                                                          64
@@ -314,8 +314,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			size_t len = 0;
 			if (EVP_PKEY_derive(ctx2.get(), nullptr, &len) != 1)
 				return build_error("encrypt::EVP_PKEY_derive: ", -1);
-			if ((unsigned int)slen > max_sane_string || len > max_sane_string)
-				return build_error("encrypt: Insane large derived keylen.", -1);
+			if ((unsigned int)slen > max_sane_string || len > max_sane_string || len < min_entropy_bytes)
+				return build_error("encrypt: Insane large or too small derived keylen.", -1);
 			vector<unsigned char> secret_i(len, 0);
 
 			if (EVP_PKEY_derive(ctx2.get(), &secret_i[0], &len) != 1)
@@ -378,7 +378,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		b64pubkeys.push_back(s);
 	}
 
-	if (slen < 16)
+	if (slen < (int)min_entropy_bytes)
 		return build_error("encrypt: Huh? Generated secret len of insufficient entropy size.", -1);
 
 	for (string &s : b64pubkeys) {
@@ -862,8 +862,8 @@ int message::decrypt(string &raw)
 			size_t len = 0;
 			if (EVP_PKEY_derive(ctx.get(), nullptr, &len) != 1)
 				return build_error("decrypt::EVP_PKEY_derive: ", -1);
-			if ((unsigned int)slen > max_sane_string || len > max_sane_string)
-				return build_error("decrypt: Insane large derived keylen.", -1);
+			if ((unsigned int)slen > max_sane_string || len > max_sane_string || len < min_entropy_bytes)
+				return build_error("decrypt: Insane large or too small derived keylen.", -1);
 			vector<unsigned char> secret_i(len, 0);
 			if (EVP_PKEY_derive(ctx.get(), &secret_i[0], &len) != 1)
 				return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
