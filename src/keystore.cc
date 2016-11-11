@@ -577,7 +577,6 @@ int persona::load_dh(const string &hex)
 {
 	size_t r = 0;
 	char buf[8192], *fr = nullptr;
-	bool has_pub = 0, has_priv = 0;
 
 	if (!is_hex_hash(hex))
 		return build_error("load_dh: Not a valid (EC)DH hex id.", -1);
@@ -608,9 +607,8 @@ int persona::load_dh(const string &hex)
 
 		f.reset(fopen(dhfile.c_str(), "r"));
 
-		// assume no subkeys if open fails for them
-		if (i > 0 && !f.get())
-			break;
+		// Do not optimize by leaving the for loop if we dont find a pubkey.
+		// We may nevertheless hold a priv key in case we send test messages to ourselfs.
 
 		do {
 			if (!f.get())
@@ -623,10 +621,7 @@ int persona::load_dh(const string &hex)
 				break;
 			pbox->pub = evp.release();
 			pbox->pub_pem = string(buf, r);
-			has_pub = 1;
 		} while (0);
-
-		keys[hex].push_back(pbox.release());
 
 		// now load private part, if available
 		dhfile = cfgbase + "/" + id + "/" + hex;
@@ -647,20 +642,22 @@ int persona::load_dh(const string &hex)
 			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 			if (!evp.get())
 				return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
-			keys[hex][i]->priv = evp.release();
-			keys[hex][i]->priv_pem = string(buf, r);
-			has_priv = 1;
+			pbox->priv = evp.release();
+			pbox->priv_pem = string(buf, r);
 		} while (0);
 
-		// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
-		// are tried to be re-imported from old mails
-		if (!has_pub && !has_priv) {
-			for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it)
-				delete *it;
+		if (pbox->pub || pbox->priv)
+			keys[hex].push_back(pbox.release());
+		else {
+			// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
+			// are tried to be re-imported from old mails in opmsg versions before using "imported" file
+			if (i == 0) {
+				errno = 0;
+				return 0;
+			}
 
-			keys.erase(hex);
-			errno = 0;
-			return 0;
+			// Can leave for loop if didnt find pub.1 and priv.1 key
+			break;
 		}
 	}
 
