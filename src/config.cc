@@ -241,19 +241,16 @@ int parse_config(const string &cfgbase)
 			config::curve_nids.push_back(NID_secp256k1);
 			seen_ec[sline] = 1;
 		}
-
-		// no more than 3 curves
-		if (config::curves.size() > 3) {
-			config::curves.pop_back();
-			config::curve_nids.pop_back();
-		}
-
 	}
 
 	// for version < 3, only one curve
-	if (config::version < 3 && config::curves.size() > 1) {
-		config::curves.erase(config::curves.begin() + 1, config::curves.end());
-		config::curve_nids.erase(config::curve_nids.begin() + 1, config::curve_nids.end());
+	if (config::version < 3 && config::curves.size() > 1)  {
+		config::curves.resize(1);
+		config::curve_nids.resize(1);
+	} else if (config::version >= 3 && config::curves.size() > 3) {
+		// no more than 3 curves otherwise
+		config::curves.resize(3);
+		config::curve_nids.resize(3);
 	}
 
 	if (config::curves.empty()) {
