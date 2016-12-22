@@ -163,11 +163,13 @@ class persona {
 	template<class T>
 	T build_error(const std::string &msg, T r)
 	{
+		int e = 0;
 		err = "persona::";
 		err += msg;
-		if (ERR_get_error()) {
+		if ((e = ERR_get_error()) {
+			ERR_load_crypto_strings();
 			err += ":";
-			err += ERR_error_string(ERR_get_error(), nullptr);
+			err += ERR_error_string(e, nullptr);
 			ERR_clear_error();
 		} else if (errno) {
 			err += ":";
