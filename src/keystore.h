@@ -166,7 +166,7 @@ class persona {
 		int e = 0;
 		err = "persona::";
 		err += msg;
-		if ((e = ERR_get_error()) {
+		if ((e = ERR_get_error())) {
 			ERR_load_crypto_strings();
 			err += ":";
 			err += ERR_error_string(e, nullptr);
