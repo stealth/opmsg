@@ -1,3 +1,9 @@
+# On most Linux distros, this should do. For BSD, please check
+# README.md about the defines that you have to pass when invoking "make".
+# For OSX or if you want to use non-default distro crypto libs (libressl,
+# openssl-dev, openssl-asan etc.), adjust the path names below accordingly.
+#
+
 CXX=c++
 DEFS=
 INC=
@@ -8,8 +14,12 @@ INC=
 # Cygwin was reported to require this:
 #DEFS+=-U__STRICT_ANSI__
 
+# reported to work with OSX brew
+#INC+=-I/opt/local/include
+#LIBS+=-L/opt/local/lib
 
-# this worked for me on OSX
+
+# my alternate openssl path for 1.1.0
 #INC+=-I/usr/local/ssl/include
 #LIBS+=-L/usr/local/ssl/lib
 #LIBS+=-Wl,--rpath=/usr/local/ssl/lib
@@ -35,6 +45,12 @@ INC=
 
 # Enable chacha20-poly1305 if avail
 #DEFS+=-DCHACHA20
+
+
+###
+### No editing should be needed below this line.
+###
+
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
