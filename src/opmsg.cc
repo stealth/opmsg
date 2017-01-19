@@ -906,7 +906,7 @@ int main(int argc, char **argv)
 		usage(argv[0]);
 
 	// first, try to find out any --config option
-	if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "--config") == 0) {
+	if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "--confdir") == 0) {
 		if (!argv[2])
 			usage(argv[0]);
 		config::cfgbase = argv[2];
