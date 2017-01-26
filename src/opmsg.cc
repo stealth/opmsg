@@ -748,7 +748,7 @@ static int split_deniable_keys(string &pub, string &priv)
 int do_import(const string &name)
 {
 	if (config::infile == "/dev/stdin") {
-		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Ctrl-C>\n\n";
+		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Return> followed by <Ctrl-C>\n\n";
 		eflush();
 	}
 
@@ -772,7 +772,9 @@ int do_import(const string &name)
 
 	persona *p = nullptr;
 	if (!(p = ks.add_persona(name, pub, priv, ""))) {
-		estr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl; eflush();
+		estr<<prefix<<"ERROR: Importing persona: "<<ks.why()<<endl;
+		estr<<prefix<<"ERROR: Not a PEM pubkey, missing newline at end of pubkey, or missing Brainpool EC curves? Check 'opmsg -D -C list' with your peer.\n";
+		eflush();
 		return -1;
 	}
 	if (config::deniable) {
@@ -786,7 +788,8 @@ int do_import(const string &name)
 	estr<<prefix<<"Check with your peer (phone, otr, twitter, selfie, ...) whether above id matches\n";
 	estr<<prefix<<"with the id that your peer got printed when generating that persona.\n";
 	estr<<prefix<<"If they do not match, you can delete this persona by removing the subdirectory\n";
-	estr<<prefix<<"of obove id inside your ~/.opmsg directory.\n";
+	estr<<prefix<<"of obove id inside your ~/.opmsg directory.\n\n";
+	estr<<prefix<<"Do not forget to 'opmsg --link' this persona to have a valid sender-id.\n";
 
 	// add_persona() also sets persona type. Check for RSA personas which need also DH params
 	// in the deniable case since it also generates new DH Kex keys
