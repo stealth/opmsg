@@ -35,6 +35,8 @@ Features:
 _opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto libraries.
 Building against BoringSSL is not recommended due to missing blowfish and ripemd algorithms.
 
+You can use various transports with _opmsg_ such as Mail or [drops](https://github.com/stealth/drops).
+
 Build
 -----
 
@@ -376,7 +378,13 @@ in the config.
 MUA integration
 ---------------
 
-There are two ways to integrate _opmsg_ into your MUA. For cool
+First, add to your _~/.gnupg/options_ file the following line:
+
+```
+keyid-format long
+```
+
+Next, there are two possible ways to integrate _opmsg_ into your MUA. For cool
 MUAs like __mutt__, you may build a dedicated _.muttrc_ by adding:
 
 ```
@@ -432,11 +440,18 @@ set pgp_decryption_okay="^opmux: SUCCESS\.$"
 
 _opmux_ is a wrapper for _opmsg_ and _gpg_, which transparently forwards encryption and decryption
 requests to the right program, by checking message markers and persona ids.
+This way you may use your _opmsg_ and _gpg_ setup in parallel and the correct (de)crypt program is
+automagically invoked. When you send a Mail and an _opmsg_ persona is found for the destination,
+_opmsg_ is used for encryption, otherwise _gpg_ is used.
 This requires your personas to be properly `--link`ed or having a valid `my_id` in your
-_opmsg_ config. _opmux_ may miss recipients with Cc/Bcc for gpg in above mutt setup.
+_opmsg_ config.
 
-For __enigmail__ or other MUAs you would just configure the gpg-path to be `/usr/local/bin/opmux` and add
-`keyid-format long` to your _~/.gnupg/config_ file and you are done.
+For __enigmail__ or other MUAs you would just configure the gpg-path to be `/path/to/opmux` and you
+are done (but dont forget the `keyid-format long` from the first step).
+
+_opmux_ prefers the _gpg2_ over the _gpg_ binary if both gpg versions are installed. If you
+have both gpg versions installed in parallel but for whatever reason want to work with your (old) gpg1 keys,
+you have to change the call order in `opmux.c` _gpg()_ function.
 
 All this however is just for convenience. The more GUI and layering you add to your
 _opmsg_ setup, the more chance you have to use wrong destination or source personas. So
@@ -600,13 +615,8 @@ opmsg: SUCCESS.
 Meta data
 ---------
 
-As _opmsg_ adds additional ids to the mail, it is possible to send all
-mail to random address of the destination persona provider who then
-could route it to the real mailbox or even offer everything as a single
-blob to download for everyone.
-This may be useful to defeat mail meta data collection. op-messages are
-self contained and ASCII-armored, so they could also be pasted to OTR,
-newsgroups, chats or paste-sites and picked up by the target persona from within
-a swarm. Also see above discussion of persona linking.
-
+If you care about meta data collection and want to reduce your data-tracks
+even further, check out [drops](https://github.com/stealth/drops).
+_drops_ is a p2p transport network for _opmsg_. It allows you to anonymously
+drop end2end encrypted op-messages without leaking meta-data such as mail headers.
 
