@@ -858,6 +858,7 @@ int main(int argc, char **argv)
 
 	struct option lopts[] = {
 	        {"confdir", required_argument, nullptr, 'c'},
+		{"help", no_argument, nullptr, 'h'},
 	        {"native", no_argument, nullptr, 'R'},
 	        {"encrypt", required_argument, nullptr, 'E'},
 	        {"decrypt", no_argument, nullptr, 'D'},
@@ -944,10 +945,13 @@ int main(int argc, char **argv)
 	}
 
 
-	while ((c = getopt_long(argc, argv, "RLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
+	while ((c = getopt_long(argc, argv, "hRLlIn:NP:C:p:SE:DV:i:o:c:", lopts, &opt_idx)) != -1) {
 		switch (c) {
 		case 'c':
 			// was already handled
+			break;
+		case 'h':
+			usage(argv[0]);
 			break;
 		case 'i':
 			config::infile = optarg;
