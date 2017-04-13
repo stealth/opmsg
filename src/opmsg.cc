@@ -716,7 +716,7 @@ int do_pgplist(const string &name)
 		search = name;
 
 	keystore ks(config::phash, config::cfgbase);
-	if (ks.load(search) < 0)
+	if (ks.load(search, LFLAGS_ALL & ~LFLAGS_KEX) < 0)	// speedup: no Kex keys needed for listing
 		return -1;
 
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {

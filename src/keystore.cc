@@ -165,7 +165,7 @@ static int key_cb(int a1, int a2, BN_GENCB *a3)
 }
 
 
-int keystore::load(const string &hex)
+int keystore::load(const string &hex, uint32_t how)
 {
 	if (hex.size() > 0) {
 		if (!is_hex_hash(hex) || hex.size() < 16)
@@ -182,7 +182,7 @@ int keystore::load(const string &hex)
 		unique_ptr<persona> p(new (nothrow) persona(cfgbase, hex));
 		if (!p.get())
 			return build_error("keystore::load:: OOM", -1);
-		if (p->load() < 0)
+		if (p->load("", how) < 0)
 			return build_error("keystore::load::" + string(p->why()), -1);
 		personas[hex] = p.release();
 		return 0;
@@ -218,7 +218,7 @@ int keystore::load(const string &hex)
 			break;
 
 		// might have stale DH keys or so, so dont abort on -1
-		if (p->load() < 0) {
+		if (p->load("", how) < 0) {
 			delete p;
 			continue;
 		}
@@ -707,7 +707,7 @@ int persona::check_type()
 }
 
 
-int persona::load(const std::string &dh_hex)
+int persona::load(const std::string &dh_hex, uint32_t how)
 {
 	size_t r = 0;
 	char buf[8192], *fr = nullptr;
@@ -785,7 +785,7 @@ int persona::load(const std::string &dh_hex)
 		unlockf(f.get());
 	}
 
-	// load EC/RSA keys
+	// load EC/RSA persona key
 	string pub_pem = "", priv_pem = "";
 
 	file = dir + "/" + ptype + ".pub.pem";
@@ -831,12 +831,15 @@ int persona::load(const std::string &dh_hex)
 	}
 
 	// if a certain dh_hex was given, only load this one. A dh_hex of special kind, only
-	// make us load RSA keys
+	// make us load persona keys
 	if (dh_hex.size() > 0) {
 		if (dh_hex == marker::rsa_kex_id || dh_hex == marker::ec_kex_id)
 			return 0;
 		return this->load_dh(dh_hex);
 	}
+
+	if (!(how & LFLAGS_KEX))
+		return 0;
 
 	// otherwise, add all DH keys that are available
 	DIR *d = opendir(dir.c_str());

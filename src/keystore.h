@@ -145,6 +145,15 @@ public:
 };
 
 
+typedef enum : uint32_t {
+	LFLAGS_NONE	= 0,
+	LFLAGS_NAME	= 1,
+	LFLAGS_KEY	= 2,
+	LFLAGS_KEX	= 4,
+	LFLAGS_ALL	= LFLAGS_NAME|LFLAGS_KEY|LFLAGS_KEX
+} load_flags;
+
+
 class persona {
 
 	std::string id, name, link_src, ptype;
@@ -294,7 +303,7 @@ public:
 
 	void used_key(const std::string &hex, bool);
 
-	int load(const std::string &hex = "");
+	int load(const std::string &hex = "", uint32_t how = LFLAGS_ALL);
 
 	int link(const std::string &hex);
 
@@ -366,7 +375,7 @@ public:
 		return md;
 	}
 
-	int load(const std::string &id = "");
+	int load(const std::string &id = "", uint32_t how = LFLAGS_ALL);
 
 	int gen_rsa(std::string &pub, std::string &priv);
 

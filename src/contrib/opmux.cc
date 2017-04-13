@@ -168,7 +168,7 @@ string has_id(const string &r)
 
 	// hash algo not relevant for searching
 	unique_ptr<keystore> ks(new (nothrow) keystore("sha256", cfg));
-	if (!ks.get() || ks->load() < 0)
+	if (!ks.get() || ks->load("", LFLAGS_ALL & ~LFLAGS_KEX) < 0)
 		return 0;
 
 	// if hex id as rcpt, try right away
