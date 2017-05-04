@@ -263,7 +263,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return build_error("encrypt: OOM", -1);
 
 	if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->pub) == EVP_PKEY_DH)) {
-		BIGNUM *his_pub_key = nullptr, *my_pub_key = nullptr;
+		const BIGNUM *his_pub_key = nullptr, *my_pub_key = nullptr;
 		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh[0]->pub), DH_free);
 		if (!dh.get())
 			return build_error("encrypt: OOM", -1);
@@ -273,11 +273,11 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		// re-calculate size for secret in the DH case; it differs
 		slen = DH_size(mydh.get());
 		secret.reset(new (nothrow) unsigned char[slen]);
-		DH_get0_key(dh.get(), &his_pub_key, nullptr);
+		opmsg::DH_get0_key(dh.get(), &his_pub_key, nullptr);
 		if (!secret.get() || DH_compute_key(secret.get(), his_pub_key, mydh.get()) != slen)
 			return build_error("encrypt::DH_compute_key: Cannot compute DH key ", -1);
 
-		DH_get0_key(mydh.get(), &my_pub_key, nullptr);
+		opmsg::DH_get0_key(mydh.get(), &my_pub_key, nullptr);
 		int binlen = BN_num_bytes(my_pub_key);
 		unique_ptr<unsigned char[]> bin(new (nothrow) unsigned char[binlen]);
 		if (!bin.get() || BN_bn2bin(my_pub_key, bin.get()) != binlen)
@@ -831,7 +831,7 @@ int message::decrypt(string &raw)
 					return build_error("decrypt: OOM", -1);
 				if (DH_check_pub_key(dh.get(), bn.get(), &ecode) != 1)
 					return build_error("decrypt: DH_check_pub_key failed.", -1);
-				DH_set0_key(dh.get(), bn.release(), nullptr);
+				opmsg::DH_set0_key(dh.get(), bn.release(), nullptr);
 				EVP_PKEY_assign_DH(peer_key.get(), dh.release());
 			// ...and a compressed EC_POINT pubkey in ECDH case
 			} else {

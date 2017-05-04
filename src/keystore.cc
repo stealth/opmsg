@@ -1148,8 +1148,8 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	pub = "";
 	priv = "";
 
-	BIGNUM *pub_key = nullptr;
-	DH_get0_key(dh.get(), &pub_key, nullptr);
+	const BIGNUM *pub_key = nullptr;
+	opmsg::DH_get0_key(dh.get(), &pub_key, nullptr);
 	if (bn2hexhash(md, pub_key, hex) < 0)
 		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", -1);
 
@@ -1243,8 +1243,8 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 			if (i > 0)
 				return build_error("add_dh_key:: Trying to add multiple DH keys as one.", v0);
 			unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
-			BIGNUM *pub_key = nullptr;
-			DH_get0_key(dh.get(), &pub_key, nullptr);
+			const BIGNUM *pub_key = nullptr;
+			opmsg::DH_get0_key(dh.get(), &pub_key, nullptr);
 			if (!dh.get() || bn2hexhash(md, pub_key, hex) < 0)
 				return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", v0);
 		} else if (keytype == EVP_PKEY_EC) {

@@ -91,26 +91,31 @@ int EVP_PKEY_base_id(const EVP_PKEY *pkey)
 #endif
 
 
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
-void DH_get0_key(const DH *dh, BIGNUM **pub_key, BIGNUM **priv_key)
+void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
 {
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
 	if (pub_key)
 		*pub_key = dh->pub_key;
 	if (priv_key)
 		*priv_key = dh->priv_key;
-}
+#elif OPENSSL_VERSION_NUMBER >= 0x1010001fL     // 1.1.0a
+	::DH_get0_key(dh, pub_key, priv_key);
+#else
+	::DH_get0_key(dh, const_cast<BIGNUM **>(pub_key), const_cast<BIGNUM **>(priv_key));
 #endif
+}
 
 
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
 int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
 {
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
 	dh->pub_key = pub_key;
 	dh->priv_key = priv_key;
+#else
+	::DH_set0_key(dh, pub_key, priv_key);
+#endif
 	return 1;
 }
-#endif
-
 
 
 }
