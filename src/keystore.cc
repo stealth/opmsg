@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2016 by Sebastian Krahmer,
+ * (C) 2015-2017 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -195,14 +195,11 @@ int keystore::load(const string &hex, uint32_t how)
 	if (!d)
 		return build_error("load::opendir:", -1);
 
-	dirent de, *result = nullptr;
+	dirent *de = nullptr;
 	for (;;) {
-		memset(&de, 0, sizeof(de));
-		if (readdir_r(d, &de, &result) < 0)
+		if ((de = readdir(d)) == nullptr)
 			break;
-		if (!result)
-			break;
-		dhex = result->d_name;
+		dhex = de->d_name;
 		if (!is_hex_hash(dhex))
 			continue;
 
@@ -846,14 +843,11 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	if (!d)
 		return build_error("load_keys::opendir:", -1);
 
-	dirent de, *result = nullptr;
+	dirent *de = nullptr;
 	for (;;) {
-		memset(&de, 0, sizeof(de));
-		if (readdir_r(d, &de, &result) < 0)
+		if ((de = readdir(d)) == nullptr)
 			break;
-		if (!result)
-			break;
-		hex = result->d_name;
+		hex = de->d_name;
 		if (!is_hex_hash(hex))
 			continue;
 		this->load_dh(hex);
