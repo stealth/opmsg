@@ -178,9 +178,9 @@ about it during import, because you will be referenced with this hex hash value
 The private part of the keys which are stored inside `~/.opmsg`
 are NOT encrypted. It is believed that once someone gained access
 to your account, its all lost anyway (except for PFS as explained later),
-so a passpharse just add a wrong feeling of security here. Keep
-your account/box unpwned! Otherwise end2end encryption makes little
-sense.
+so a passphrase adds naught beyond a false sense of security.
+Keep your account/box unpwned! Otherwise end2end encryption makes
+little sense.
 
 _opmsg_ encourages users for easy persona creation and throwaway.
 The directory structure below `~/.opmsg` is easy and straight
