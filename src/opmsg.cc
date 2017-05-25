@@ -397,7 +397,7 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 
 	// Add new (EC)DH keys for upcoming Kex in future
 	vector<string> newdh;
-	for (int i = 0; src_p->can_kex_gen() && i < config::new_dh_keys; ++i) {
+	for (int i = 0; config::calgo != "null" && src_p->can_kex_gen() && i < config::new_dh_keys; ++i) {
 		vector<PKEYbox *> vpbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
 		if (vpbox.size() > 0) {
 			newdh.push_back(vpbox[0]->hex);
