@@ -77,7 +77,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.76 -- (C) 2017 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.77 -- (C) 2017 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -582,7 +582,7 @@ int do_verify(const string &verify_file)
 }
 
 
-int do_newpersona(const string &name, const string &type)
+int do_newpersona(const string &name, const string &type, bool sign)
 {
 	keystore ks(config::phash, config::cfgbase);
 
@@ -621,11 +621,35 @@ int do_newpersona(const string &name, const string &type)
 		estr<<" --deniable";
 	estr<<"\n\n";
 	eflush();
+
 	ostr<<pub;
 	if (config::deniable)
 		ostr<<priv;
+
+	// (self-)sign output data shown to user with the freshly generated persona;
+	// output can be --imported and verified via --decrypt
+	if (sign) {
+		string s = ostr.str();
+		message msg(config::version, config::cfgbase, config::phash, config::khash, config::shash, "null");
+		msg.src_id(p->get_id());
+		msg.dst_id(p->get_id());
+
+		if (p->get_type() == marker::ec)
+			msg.kex_id(marker::ec_kex_id);
+		else
+			msg.kex_id(marker::rsa_kex_id);
+
+		if (msg.encrypt(s, p, p) < 0) {
+			estr<<prefix<<"ERROR: Signing freshly generated persona key: "<<msg.why()<<endl; eflush();
+			return -1;
+		}
+		ostr.str("");
+		ostr<<s;
+	}
+
 	ostr<<endl;
 	oflush();
+
 	estr<<prefix<<"Check (by phone, otr, twitter, id-selfie etc.) that above id matches\n";
 	estr<<prefix<<"the import message from your peer.\n";
 	estr<<prefix<<"AFTER THAT, you can go ahead, safely exchanging op-messages.\n\n";
@@ -634,15 +658,15 @@ int do_newpersona(const string &name, const string &type)
 }
 
 
-int do_new_rsa_persona(const string &name)
+int do_new_rsa_persona(const string &name, bool sign)
 {
-	return do_newpersona(name, marker::rsa);
+	return do_newpersona(name, marker::rsa, sign);
 }
 
 
-int do_new_ec_persona(const string &name)
+int do_new_ec_persona(const string &name, bool sign)
 {
-	return do_newpersona(name, marker::ec);
+	return do_newpersona(name, marker::ec, sign);
 }
 
 
@@ -995,7 +1019,7 @@ int main(int argc, char **argv)
 			cmode = CMODE_DECRYPT;
 			break;
 		case 'S':
-			cmode = CMODE_SIGN;
+			cmode |= CMODE_SIGN;
 			break;
 		case 'P':
 			config::my_id = optarg;
@@ -1005,7 +1029,7 @@ int main(int argc, char **argv)
 			verify_file = optarg;
 			break;
 		case 'N':
-			cmode = CMODE_NEWP;
+			cmode |= CMODE_NEWP;
 			break;
 		case 'I':
 			cmode = CMODE_IMPORT;
@@ -1029,7 +1053,7 @@ int main(int argc, char **argv)
 			cmode = CMODE_NEWDHP;
 			break;
 		case NEWECP:
-			cmode = CMODE_NEWECP;
+			cmode |= CMODE_NEWECP;
 			break;
 		case ID_FORMAT_LONG:
 			config::idformat = "long";
@@ -1130,16 +1154,18 @@ int main(int argc, char **argv)
 		r = do_verify(verify_file);
 		break;
 	case CMODE_NEWP:
+	case CMODE_NEWP|CMODE_SIGN:
 		estr<<prefix<<"creating new persona (RSA "<<config::rsa_len<<", DH "<<config::dh_plen<<")\n\n"; eflush();
-		r = do_new_rsa_persona(name);
+		r = do_new_rsa_persona(name, (cmode & CMODE_SIGN) == CMODE_SIGN);
 		break;
 	case CMODE_NEWDHP:
 		estr<<prefix<<"creating new DHparams for persona "<<idformat(config::my_id)<<"\n\n"; eflush();
 		r = do_newdhparams();
 		break;
 	case CMODE_NEWECP:
+	case CMODE_NEWECP|CMODE_SIGN:
 		estr<<prefix<<"creating new EC persona (curve "<<config::curves[0]<<")\n\n"; eflush();
-		r = do_new_ec_persona(name);
+		r = do_new_ec_persona(name, (cmode & CMODE_SIGN) == CMODE_SIGN);
 		break;
 	case CMODE_IMPORT:
 		estr<<prefix<<"importing persona\n"; eflush();
@@ -1156,6 +1182,8 @@ int main(int argc, char **argv)
 	case CMODE_PGPLIST:
 		r = do_pgplist(name);
 		break;
+	default:
+		estr<<prefix<<"Invalid combination of options?\n";
 	}
 
 	if (cmode != CMODE_PGPLIST) {
