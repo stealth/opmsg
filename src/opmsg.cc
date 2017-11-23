@@ -937,7 +937,8 @@ int main(int argc, char **argv)
 	if (strcmp(argv[1], "-c") == 0 || strcmp(argv[1], "--confdir") == 0) {
 		if (!argv[2])
 			usage(argv[0]);
-		config::cfgbase = argv[2];
+		if (strcmp(argv[2], "") != 0)
+			config::cfgbase = argv[2];
 	}
 
 	if (mkdir(config::cfgbase.c_str(), 0700) < 0 && errno != EEXIST) {

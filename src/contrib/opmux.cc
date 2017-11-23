@@ -27,6 +27,7 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <map>
 #include <cstdio>
 #include <cstring>
 #include <cstdlib>
@@ -209,6 +210,12 @@ void sig_int(int x)
 }
 
 
+enum {
+	OPMSG_OPT_CONFDIR	=	0x1000,
+	OPMSG_OPT_BURN		=	0x2000
+};
+
+
 int main(int argc, char **argv, char **envp)
 {
 	struct option lopts[] = {
@@ -220,6 +227,9 @@ int main(int argc, char **argv, char **envp)
 	        {"output", required_argument, nullptr, 'o'},
 		{"local-user", required_argument, nullptr, 'u'},
 		{"status-fd", required_argument, nullptr, 'f'},
+
+		{"confdir", required_argument, nullptr, OPMSG_OPT_CONFDIR},
+		{"burn", no_argument, nullptr, OPMSG_OPT_BURN},
 
 		{"passphrase-fd", required_argument, nullptr, 'I'},	// ignore
 		{"encrypt-to", required_argument, nullptr, 'I'},
@@ -234,22 +244,31 @@ int main(int argc, char **argv, char **envp)
 		{"trust-model", required_argument, nullptr, 'I'},
 	        {nullptr, 0, nullptr, 0}};
 
+	map<string, int> opmsg_argv_only = {{"--confdir", 1}, {"--burn", 0}};
+
 	char opmsg[] = "opmsg", list[] = "--listpgp", dec[] = "--decrypt", enc[] = "--encrypt",
-	     in[] = "--in", out[] = "--out", idshort[] = "--short", name[] = "--name";
+	     in[] = "--in", out[] = "--out", idshort[] = "--short", name[] = "--name", conf[] = "--confdir";
 	char *opmsg_list[] = {opmsg, list, idshort, nullptr, nullptr, nullptr};
 
-	string infile = "-", outfile = "", rcpt = "";
-	int c = 0, opt_idx = 0, status_fd = 2;
+	string infile = "-", outfile = "", rcpt = "", burn = "",
+	       confdir = "";	// empty confdir treated as default by opmsg
+	int i = 0, j = 0, c = 0, opt_idx = 0, status_fd = 2;
 	pid_t pid = 0;
 	enum { MODE_ENCRYPT = 0, MODE_DECRYPT = 1, MODE_LIST = 2} mode = MODE_DECRYPT;
 
-	// getopt() reorders argv, so save old order
+	// getopt() reorders argv, so save old order to be passed to gpg invocation
+	// if we dont find a opmsg persona
 	char **oargv = new (nothrow) char*[argc + 1];
 	if (!oargv)
 		return -1;
-	for (c = 0; c < argc; ++c)
-		oargv[c] = argv[c];
-	oargv[c] = nullptr;
+	for (i = 0, j = 0; i < argc; ++i) {
+		if (opmsg_argv_only.count(argv[i]) > 0) {
+			i += opmsg_argv_only[argv[i]];		// jump over optional parameter, maybe
+			continue;
+		}
+		oargv[j++] = argv[i];
+	}
+	oargv[j] = nullptr;
 
 	// suppress 'invalid option' error messages for gpg options that we
 	// do not parse ourselfs
@@ -281,6 +300,12 @@ int main(int argc, char **argv, char **envp)
 		case 'v':
 			gpg(argv);
 			break;	// neverreached
+		case OPMSG_OPT_CONFDIR:
+			confdir = optarg;
+			break;
+		case OPMSG_OPT_BURN:
+			burn = "--burn";
+			break;
 		default:
 			// ignore other options, and only pass it along
 			// once gpg detected
@@ -339,13 +364,17 @@ int main(int argc, char **argv, char **envp)
 
 		if ((pid = fork()) == 0) {
 			if (has_opmsg) {
-				char *opmsg_d[] = {opmsg, dec, in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
-				int idx = 3;
+				char *opmsg_d[] = {opmsg, conf, strdup(confdir.c_str()), dec, in, strdup(infile.c_str()),
+				                   nullptr, nullptr, nullptr, nullptr};
+				int idx = 5;
 
 				if (outfile.size() > 0) {
 					opmsg_d[++idx] = out;
 					opmsg_d[++idx] = strdup(outfile.c_str());
 				}
+				if (burn.size() > 0)
+					opmsg_d[++idx] = strdup(burn.c_str());
+
 				execvp(opmsg, opmsg_d);
 				exit(1);
 			} else
@@ -387,8 +416,9 @@ int main(int argc, char **argv, char **envp)
 	string opmsg_id = has_id(rcpt);
 
 	if (opmsg_id.size()) {
-		char *opmsg_e[] = {opmsg, enc, strdup(opmsg_id.c_str()), in, strdup(infile.c_str()), nullptr, nullptr, nullptr};
-		int idx = 4;
+		char *opmsg_e[] = {opmsg, conf, strdup(confdir.c_str()), enc, strdup(opmsg_id.c_str()), in, strdup(infile.c_str()),
+		                   nullptr, nullptr, nullptr};
+		int idx = 6;
 
 		if (outfile.size() > 0) {
 			opmsg_e[++idx] = out;
