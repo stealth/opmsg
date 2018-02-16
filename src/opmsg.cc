@@ -1106,7 +1106,14 @@ int main(int argc, char **argv)
 
 	OpenSSL_add_all_algorithms();
 
-	RAND_load_file("/dev/urandom", 2048);
+	if (RAND_load_file("/dev/urandom", 2048) != 2048) {
+		if (RAND_load_file("/dev/random", 64) != 64) {
+			estr<<prefix<<"Unable to load randomness.\n\n";
+			estr<<prefix<<"FAILED.\n";
+			eflush();
+			return -1;
+		}
+	}
 
 	// clear error queue, since FIPS loading bugs might overlay our own errors
 	ERR_clear_error();
