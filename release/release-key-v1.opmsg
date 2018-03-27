@@ -1,0 +1,51 @@
+-----BEGIN OPMSG-----
+version=3
+-----BEGIN SIGNATURE-----
+MIGIAkIA8P6MNgO6ROmjIt+uZoDls5CbiIiGIKs6idBZT3wXIZdAnk5uVtmOjY0MBW1/+kd9dCttb9a8
+hg/eSADUJ7X1wmcCQgFpaY2UESF+MU2EJrkMOy29Wo+MuhCnPvsUAGjVczoUJBe8ZDwR9jLryayo2ZVn
+7TyfdoopXK5YkvFeXhntm8+e3A==
+-----END SIGNATURE-----
+rythmz=sha256:sha256:sha256:null:kEj6Y66IZZ4xrKGlpQGjaryGBYciuuTH
+cfg-num=3:1:
+src-id=aa873e4fd0b17efc6c3874fa507b0669068c39a23a74561fd7ca907d0517f2a4
+dst-id=aa873e4fd0b17efc6c3874fa507b0669068c39a23a74561fd7ca907d0517f2a4
+kex-id=11111111
+-----BEGIN OPMSG DATA-----
+
+This file contains the "official" opmsg release key, version 1.
+
+Make sure that you obtained this file from a trusted path, i.e.
+via https://github.com/stealth/opmsg and after verifying
+the git content via
+
+git log --show-signature
+
+You may then import the release key:
+
+opmsg --import --in release-key-v1.opmsg --name opmsg-rkey-v1 --phash sha256
+
+
+and check integrity of this file itself:
+
+opmsg -D --in release-key-v1.opmsg
+
+The "official" repo for opmsg tarballs, as requested by the OpenBSD
+ports team due to caching/inconsitency issues with github tarball generation
+is http://stealth.openwall.net/opmsg
+
+You may verify tarballs obtained from there via:
+
+opmsg -V opmsg-XY.tgz --in opmsg-XY.sig
+
+it should tell you that the signature was made by the opmsg-rkey-v1 persona.
+
+-----BEGIN PUBLIC KEY-----
+MIGbMBAGByqGSM49AgEGBSuBBAAjA4GGAAQA4yWpuDRBCN11WUXhipiQrEzeEJSS
+z6PGG/U7ITGGqod+GHz86aN5mUu85fkZeBHdFmhCI5RlCN6p/iNJnRIqmS4Bp8su
+RaVOvNPNYIFnnYJ3CJtwIL8lgeDf8dDAHMofBOO0KF4bBYYRiYmzUVyV5chr0jXQ
+PumcGxEYqH7DB+GO2ME=
+-----END PUBLIC KEY-----
+
+
+
+-----END OPMSG-----

@@ -20,9 +20,9 @@ INC=
 
 
 # my alternate openssl path for 1.1.0
-#INC+=-I/usr/local/ssl/include
-#LIBS+=-L/usr/local/ssl/lib
-#LIBS+=-Wl,--rpath=/usr/local/ssl/lib
+#INC+=-I/usr/local/ossl-1.1.0f/include
+#LIBS+=-L/usr/local/ossl-1.1.0f/lib
+#LIBS+=-Wl,--rpath=/usr/local/ossl-1.1.0f/lib
 
 
 # LibreSSL setups, define your paths here
