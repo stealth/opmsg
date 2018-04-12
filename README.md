@@ -414,7 +414,10 @@ and work with your mails as you would it with _PGP/GPG_ before. If you
 use a mix of _GPG_ and _opmsg_ peers, its probably wise to create
 a dedicated _.muttrc_ file for _opmsg_ and route _opmsg_ mails to
 a different inbox, so you can easily work with GPG and _opmsg_ in
-parallel.
+parallel. Note that some mutt installs (neomutt) require the `-n` switch
+if you load your own config via `-F` in order to skip processing of system-wide
+config files. This would otherwise overload all of your pgp variables.
+
 But theres also another option: Using _opmux_:
 
 ```
