@@ -212,7 +212,8 @@ void sig_int(int x)
 
 enum {
 	OPMSG_OPT_CONFDIR	=	0x1000,
-	OPMSG_OPT_BURN		=	0x2000
+	OPMSG_OPT_BURN		=	0x2000,
+	OPMUX_OPT_GPGERROROK	=	0x4000
 };
 
 
@@ -231,6 +232,13 @@ int main(int argc, char **argv, char **envp)
 		{"confdir", required_argument, nullptr, OPMSG_OPT_CONFDIR},
 		{"burn", no_argument, nullptr, OPMSG_OPT_BURN},
 
+		// also print "opmux: SUCCESS" if gpg -d "fails" due to failed
+		// signature check; yet still correctly decrypting content.
+		// The failed signature check will nevertheless be visible via --status-fd,
+		// but mutt would fail to show correctly decrypted content if it doesnt
+		// see $pgp_decryption_okay= regex.
+		{"gpg-error-ok", no_argument, nullptr, OPMUX_OPT_GPGERROROK},
+
 		{"passphrase-fd", required_argument, nullptr, 'I'},	// ignore
 		{"encrypt-to", required_argument, nullptr, 'I'},
 		{"hidden-encrypt-to", required_argument, nullptr, 'I'},
@@ -244,7 +252,7 @@ int main(int argc, char **argv, char **envp)
 		{"trust-model", required_argument, nullptr, 'I'},
 	        {nullptr, 0, nullptr, 0}};
 
-	map<string, int> opmsg_argv_only = {{"--confdir", 1}, {"--burn", 0}};
+	map<string, int> opmsg_argv_only = {{"--confdir", 1}, {"--burn", 0}, {"--gpg-error-ok", 0}};
 
 	char opmsg[] = "opmsg", list[] = "--listpgp", dec[] = "--decrypt", enc[] = "--encrypt",
 	     in[] = "--in", out[] = "--out", idshort[] = "--short", name[] = "--name", conf[] = "--confdir";
@@ -252,7 +260,7 @@ int main(int argc, char **argv, char **envp)
 
 	string infile = "-", outfile = "", rcpt = "", burn = "",
 	       confdir = "";	// empty confdir treated as default by opmsg
-	int i = 0, j = 0, c = 0, opt_idx = 0, status_fd = 2;
+	int i = 0, j = 0, c = 0, opt_idx = 0, status_fd = 2, gpg_error_ok = 0;
 	pid_t pid = 0;
 	enum { MODE_ENCRYPT = 0, MODE_DECRYPT = 1, MODE_LIST = 2} mode = MODE_DECRYPT;
 
@@ -305,6 +313,9 @@ int main(int argc, char **argv, char **envp)
 			break;
 		case OPMSG_OPT_BURN:
 			burn = "--burn";
+			break;
+		case OPMUX_OPT_GPGERROROK:
+			gpg_error_ok = 1;
 			break;
 		default:
 			// ignore other options, and only pass it along
@@ -390,7 +401,7 @@ int main(int argc, char **argv, char **envp)
 			status = WEXITSTATUS(status);
 
 			// Add some success message in case of success, to make "pgp_decryption_okay" happy
-			if (status == 0) {
+			if (status == 0 || gpg_error_ok) {
 				string mua = "unknown";
 				if (getenv("OPMUX_MUA") != nullptr)
 					mua = getenv("OPMUX_MUA");
