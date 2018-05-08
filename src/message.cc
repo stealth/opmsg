@@ -121,7 +121,7 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 		return build_error("sign:: Persona has no pkey.", -1);
 
 	// do not take ownership
-	EVP_PKEY *evp = src_persona->get_pkey()->priv;
+	EVP_PKEY *evp = src_persona->get_pkey()->d_priv;
 
 	if ((rsa = EVP_PKEY_get1_RSA(evp))) {
 		RSA_blinding_on(rsa, nullptr);
@@ -262,9 +262,9 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (!secret.get())
 		return build_error("encrypt: OOM", -1);
 
-	if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->pub) == EVP_PKEY_DH)) {
+	if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->d_pub) == EVP_PKEY_DH)) {
 		const BIGNUM *his_pub_key = nullptr, *my_pub_key = nullptr;
-		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh[0]->pub), DH_free);
+		unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(ec_dh[0]->d_pub), DH_free);
 		if (!dh.get())
 			return build_error("encrypt: OOM", -1);
 		unique_ptr<DH, DH_del> mydh(DHparams_dup(dh.get()), DH_free);
@@ -287,17 +287,17 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		b64_encode(reinterpret_cast<char *>(bin.get()), binlen, s);
 		b64pubkeys.push_back(s);
 
-	} else if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->pub) == EVP_PKEY_EC)) {
+	} else if (!ec_dh.empty() && (EVP_PKEY_base_id(ec_dh[0]->d_pub) == EVP_PKEY_EC)) {
 
 		vector<unsigned char> secret_v;
 		secret_v.reserve(0x1000);	// to avoid re-allocation
 		slen = 0;
 
 		for (unsigned int i = 0; i < ec_dh.size(); ++i) {
-			if (!ec_dh[i]->can_encrypt() || EVP_PKEY_base_id(ec_dh[i]->pub) != EVP_PKEY_EC)
+			if (!ec_dh[i]->can_encrypt() || EVP_PKEY_base_id(ec_dh[i]->d_pub) != EVP_PKEY_EC)
 				return build_error("encrypt: Found non-ECDH key in ECDH loop.", -1);
 
-			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh[i]->pub, nullptr), EVP_PKEY_CTX_free);
+			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx1(EVP_PKEY_CTX_new(ec_dh[i]->d_pub, nullptr), EVP_PKEY_CTX_free);
 			if (!ctx1.get() || EVP_PKEY_keygen_init(ctx1.get()) != 1)
 				return build_error("encrypt::EVP_PKEY_keygen_init:", -1);
 			EVP_PKEY *ppkey = nullptr;
@@ -307,7 +307,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx2(EVP_PKEY_CTX_new(my_ec.get(), nullptr), EVP_PKEY_CTX_free);
 			if (EVP_PKEY_derive_init(ctx2.get()) != 1)
 				return build_error("encrypt::EVP_PKEY_derive_init: ", -1);
-			if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh[i]->pub) != 1)
+			if (EVP_PKEY_derive_set_peer(ctx2.get(), ec_dh[i]->d_pub) != 1)
 				return build_error("encrypt::EVP_PKEY_derive_set_peer: ", -1);
 
 			// find len
@@ -351,7 +351,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		if (RAND_bytes(secret.get(), slen) != 1)
 			return build_error("encrypt::RAND_bytes: ", -1);
 
-		EVP_PKEY *evp = dst_persona->get_pkey()->pub;
+		EVP_PKEY *evp = dst_persona->get_pkey()->d_pub;
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp, nullptr), EVP_PKEY_CTX_free);
 		if (!p_ctx.get())
 			return build_error("encrypt:: Unable to create PKEY encryption context ", -1);
@@ -687,7 +687,7 @@ int message::decrypt(string &raw)
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return build_error("decrypt::EVP_MD_CTX_create:", -1);
-	EVP_PKEY *evp = src_persona->get_pkey()->pub;
+	EVP_PKEY *evp = src_persona->get_pkey()->d_pub;
 	if (EVP_DigestVerifyInit(md_ctx.get(), nullptr, algo2md(shash), nullptr, evp) != 1)
 		return build_error("decrypt::EVP_DigestVerifyInit:", -1);
 	if (EVP_DigestVerifyUpdate(md_ctx.get(), raw.c_str(), raw.size()) != 1)
@@ -777,7 +777,7 @@ int message::decrypt(string &raw)
 		if (!dst_persona->can_decrypt())
 			return build_error("decrypt: No private PKEY for persona " + dst_persona->get_id(), 0);
 		// kexdh contains pub encrypted secret, not DH BIGNUM
-		evp = dst_persona->get_pkey()->priv;
+		evp = dst_persona->get_pkey()->d_priv;
 
 		unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> p_ctx(EVP_PKEY_CTX_new(evp, nullptr), EVP_PKEY_CTX_free);
 		if (!p_ctx.get())
@@ -819,10 +819,10 @@ int message::decrypt(string &raw)
 				return build_error("decrypt: OOM", -1);
 
 			// bn is a BN pubkey in DH case...
-			if (EVP_PKEY_base_id(ec_dh[i]->priv) == EVP_PKEY_DH) {
+			if (EVP_PKEY_base_id(ec_dh[i]->d_priv) == EVP_PKEY_DH) {
 				if (i > 0)
 					return build_error("decrypt: Huh? No more than 1 DH key in Kex allowed.", -1);
-				DH *tmpdh = EVP_PKEY_get1_DH(ec_dh[i]->priv);	// older OpenSSL lacking get0
+				DH *tmpdh = EVP_PKEY_get1_DH(ec_dh[i]->d_priv);	// older OpenSSL lacking get0
 				if (!tmpdh)
 					return build_error("decrypt: EVP_PKEY_get1_DH return NULL.", -1);
 				unique_ptr<DH, DH_del> dh(DHparams_dup(tmpdh), DH_free);
@@ -835,7 +835,7 @@ int message::decrypt(string &raw)
 				EVP_PKEY_assign_DH(peer_key.get(), dh.release());
 			// ...and a compressed EC_POINT pubkey in ECDH case
 			} else {
-				unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh[i]->priv), EC_KEY_free);
+				unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh[i]->d_priv), EC_KEY_free);
 				if (!my_ec.get())
 					return build_error("decrypt::EVP_PKEY_get1_EC_KEY:", -1);
 				unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(EC_KEY_get0_group(my_ec.get()), bn.get(), nullptr, nullptr), EC_POINT_free);
@@ -852,7 +852,7 @@ int message::decrypt(string &raw)
 				EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
 			}
 
-			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh[i]->priv, nullptr), EVP_PKEY_CTX_free);
+			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh[i]->d_priv, nullptr), EVP_PKEY_CTX_free);
 			if (!ctx.get() || EVP_PKEY_derive_init(ctx.get()) != 1)
 				return build_error("decrypt::EVP_PKEY_derive_init: ", -1);
 			if (EVP_PKEY_derive_set_peer(ctx.get(), peer_key.get()) != 1)

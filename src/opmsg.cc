@@ -400,10 +400,10 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	for (int i = 0; config::calgo != "null" && src_p->can_kex_gen() && i < config::new_dh_keys; ++i) {
 		vector<PKEYbox *> vpbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
 		if (vpbox.size() > 0) {
-			newdh.push_back(vpbox[0]->hex);
+			newdh.push_back(vpbox[0]->d_hex);
 			msg.ec_domains = vpbox.size();
 			for (auto j = vpbox.begin(); j != vpbox.end(); ++j)
-				msg.ecdh_keys.push_back((*j)->pub_pem);
+				msg.ecdh_keys.push_back((*j)->d_pub_pem);
 		}
 	}
 

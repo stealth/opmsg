@@ -490,8 +490,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		return build_error("add_persona::OOM", nullptr);
 
 	p->set_pkey(evp_pub.release(), evp_priv.release());
-	p->d_pkey->pub_pem = pub_pem;
-	p->d_pkey->priv_pem = priv_pem;
+	p->d_pkey->d_pub_pem = pub_pem;
+	p->d_pkey->d_priv_pem = priv_pem;
 	p->set_type(type1);
 
 	if (dhparams_pem.size() > 0 && type1 == marker::rsa) {
@@ -600,7 +600,7 @@ int persona::load_dh(const string &hex)
 		unique_ptr<PKEYbox> pbox(new (nothrow) PKEYbox(nullptr, nullptr));
 		if (!pbox.get())
 			return build_error("load_dh: OOM", -1);
-		pbox->hex = hex;
+		pbox->d_hex = hex;
 
 		f.reset(fopen(dhfile.c_str(), "r"));
 
@@ -616,8 +616,8 @@ int persona::load_dh(const string &hex)
 			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 			if (!evp.get())
 				break;
-			pbox->pub = evp.release();
-			pbox->pub_pem = string(buf, r);
+			pbox->d_pub = evp.release();
+			pbox->d_pub_pem = string(buf, r);
 		} while (0);
 
 		// now load private part, if available
@@ -639,11 +639,11 @@ int persona::load_dh(const string &hex)
 			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 			if (!evp.get())
 				return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
-			pbox->priv = evp.release();
-			pbox->priv_pem = string(buf, r);
+			pbox->d_priv = evp.release();
+			pbox->d_priv_pem = string(buf, r);
 		} while (0);
 
-		if (pbox->pub || pbox->priv)
+		if (pbox->d_pub || pbox->d_priv)
 			d_keys[hex].push_back(pbox.release());
 		else {
 			// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
@@ -812,8 +812,8 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	}
 
 	set_pkey(evp_pub.release(), evp_priv.release());
-	d_pkey->pub_pem = pub_pem;
-	d_pkey->priv_pem = priv_pem;
+	d_pkey->d_pub_pem = pub_pem;
+	d_pkey->d_priv_pem = priv_pem;
 
 	if (d_ptype == marker::rsa) {
 		// load DH params if avail
@@ -1085,9 +1085,9 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 		if (!pbox)
 			return build_error("gen_kex_key: OOM", v0);
 
-		pbox->pub_pem = pub_pem;
-		pbox->priv_pem = priv_pem;
-		pbox->hex = hex;
+		pbox->d_pub_pem = pub_pem;
+		pbox->d_priv_pem = priv_pem;
+		pbox->d_hex = hex;
 		pbox->set_peer_id(peer);
 
 		pboxes->push_back(pbox);
@@ -1285,8 +1285,8 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 		PKEYbox *pbox = new (nothrow) PKEYbox(evp_pub.release(), nullptr);
 		if (!pbox)
 			return build_error("add_dh_pubkey:: OOM", v0);
-		pbox->pub_pem = pub_pem;
-		pbox->hex = hex;
+		pbox->d_pub_pem = pub_pem;
+		pbox->d_hex = hex;
 		pboxes->push_back(pbox);
 	}
 
@@ -1378,8 +1378,8 @@ int persona::del_dh_priv(const string &hex)
 
 	if (d_keys.count(hex) > 0) {
 		for (auto it = d_keys[hex].begin(); it != d_keys[hex].end(); ++it) {
-			(*it)->priv_pem = "";
-			EVP_PKEY_free((*it)->priv); (*it)->priv = nullptr;
+			(*it)->d_priv_pem = "";
+			EVP_PKEY_free((*it)->d_priv); (*it)->d_priv = nullptr;
 		}
 	}
 
@@ -1402,8 +1402,8 @@ int persona::del_dh_pub(const string &hex)
 
 	if (d_keys.count(hex) > 0) {
 		for (auto it = d_keys[hex].begin(); it != d_keys[hex].end(); ++it) {
-			(*it)->pub_pem = "";
-			EVP_PKEY_free((*it)->pub); (*it)->pub = nullptr;
+			(*it)->d_pub_pem = "";
+			EVP_PKEY_free((*it)->d_pub); (*it)->d_pub = nullptr;
 		}
 	}
 	return 0;

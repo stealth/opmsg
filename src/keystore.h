@@ -52,63 +52,63 @@ class PKEYbox {
 
 public:
 
-	EVP_PKEY *pub, *priv;
+	EVP_PKEY *d_pub{nullptr}, *d_priv{nullptr};
 
-	std::string pub_pem, priv_pem, hex;
+	std::string d_pub_pem{""}, d_priv_pem{""}, d_hex{""};
 
 	/* The peer id is assigned if new ephemeral keys are generated to be attached to
 	 * a message that is destinated to a certain persona. Only this persona (peer id)
 	 * should eventually come back with a kex-id referencing _this_ key. This only affects
 	 * Kex keys, not persona keys. It is OK to have an empty peer id.
 	 */
-	std::string peer_id;
+	std::string d_peer_id{""};
 
 
 	PKEYbox(EVP_PKEY *p, EVP_PKEY *s)
-		: pub(p), priv(s), pub_pem(""), priv_pem(""), hex(""), peer_id("")
+		: d_pub(p), d_priv(s)
 	{
 	}
 
 	virtual ~PKEYbox()
 	{
-		if (pub)
-			EVP_PKEY_free(pub);
-		if (priv)
-			EVP_PKEY_free(priv);
+		if (d_pub)
+			EVP_PKEY_free(d_pub);
+		if (d_priv)
+			EVP_PKEY_free(d_priv);
 	}
 
 	bool can_sign()
 	{
-		return priv != nullptr;
+		return d_priv != nullptr;
 	}
 
 	bool can_decrypt()
 	{
-		return priv != nullptr;
+		return d_priv != nullptr;
 	}
 
 	bool can_encrypt()
 	{
-		return pub != nullptr;
+		return d_pub != nullptr;
 	}
 
 	bool matches_peer_id(const std::string &s)
 	{
 		// If no designated peer was recorded, any peer is OK
-		if (peer_id.size() == 0)
+		if (d_peer_id.size() == 0)
 			return 1;
-		return peer_id == s;
+		return d_peer_id == s;
 	}
 
 	std::string get_peer_id()
 	{
-		return peer_id;
+		return d_peer_id;
 	}
 
 
 	void set_peer_id(const std::string &s)
 	{
-		peer_id = s;
+		d_peer_id = s;
 	}
 };
 
@@ -232,12 +232,12 @@ public:
 
 	bool can_encrypt()
 	{
-		return d_pkey != nullptr && d_pkey->pub != nullptr;
+		return d_pkey != nullptr && d_pkey->d_pub != nullptr;
 	}
 
 	bool can_sign()
 	{
-		return d_pkey != nullptr && d_pkey->priv != nullptr;
+		return d_pkey != nullptr && d_pkey->d_priv != nullptr;
 	}
 
 	bool can_decrypt()
