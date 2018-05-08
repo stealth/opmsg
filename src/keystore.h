@@ -117,30 +117,30 @@ class DHbox {
 
 public:
 
-	DH *pub, *priv;
+	DH *d_pub{nullptr}, *d_priv{nullptr};
 
-	std::string pub_pem, priv_pem, hex;
+	std::string d_pub_pem{""}, d_priv_pem{""}, d_hex{""};
 
-	DHbox(DH *dh1, DH *dh2) : pub(dh1), priv(dh2), pub_pem(""), priv_pem(""), hex("")
+	DHbox(DH *dh1, DH *dh2) : d_pub(dh1), d_priv(dh2)
 	{
 	}
 
 	virtual ~DHbox()
 	{
-		if (pub)
-			DH_free(pub);
-		if (priv)
-			DH_free(priv);
+		if (d_pub)
+			DH_free(d_pub);
+		if (d_priv)
+			DH_free(d_priv);
 	}
 
 	bool can_decrypt()
 	{
-		return priv != nullptr;
+		return d_priv != nullptr;
 	}
 
 	bool can_encrypt()
 	{
-		return pub != nullptr;
+		return d_pub != nullptr;
 	}
 };
 
@@ -156,7 +156,7 @@ typedef enum : uint32_t {
 
 class persona {
 
-	std::string d_id, d_name, d_link_src, d_ptype;
+	std::string d_id{""}, d_name{""}, d_link_src{""}, d_ptype{""};
 
 	// The (EC)DH 'session' keys this persona holds
 	std::map<std::string, std::vector<PKEYbox *>> d_keys;
@@ -164,10 +164,10 @@ class persona {
 	// List of hashes of all imported keys so far
 	std::map<std::string, unsigned int> d_imported;
 
-	PKEYbox *d_pkey;
-	DHbox *d_dh_params;
+	PKEYbox *d_pkey{nullptr};
+	DHbox *d_dh_params{nullptr};
 
-	std::string d_cfgbase, d_err;
+	std::string d_cfgbase{""}, d_err{""};
 
 	template<class T>
 	T build_error(const std::string &msg, T r)
@@ -193,7 +193,7 @@ class persona {
 public:
 
 	persona(const std::string &dir, const std::string &hash, const std::string &n = "")
-		: d_id(hash), d_name(n), d_link_src(""), d_pkey(nullptr), d_dh_params(nullptr), d_cfgbase(dir), d_err("")
+		: d_id(hash), d_name(n), d_cfgbase(dir)
 	{
 		if (!is_hex_hash(d_id))
 			d_id = "dead";
@@ -248,7 +248,7 @@ public:
 	bool can_kex_gen()
 	{
 		if (d_ptype == marker::rsa)
-			return d_dh_params != nullptr && d_dh_params->pub != nullptr;
+			return d_dh_params != nullptr && d_dh_params->d_pub != nullptr;
 		return true;
 	}
 
@@ -329,27 +329,27 @@ public:
 
 class keystore {
 
-	std::string cfgbase;
-	std::map<std::string, persona *> personas;
+	std::string d_cfgbase{""};
+	std::map<std::string, persona *> d_personas;
 
-	const EVP_MD *md;
+	const EVP_MD *d_md{nullptr};
 
-	std::string err;
+	std::string d_err{""};
 
 	template<class T>
 	T build_error(const std::string &msg, T r)
 	{
 		int e = 0;
-		err = "keystore::";
-		err += msg;
+		d_err = "keystore::";
+		d_err += msg;
 		if ((e = ERR_get_error())) {
 			ERR_load_crypto_strings();
-			err += ":";
-			err += ERR_error_string(e, nullptr);
+			d_err += ":";
+			d_err += ERR_error_string(e, nullptr);
 			ERR_clear_error();
 		} else if (errno) {
-			err += ":";
-			err += strerror(errno);
+			d_err += ":";
+			d_err += strerror(errno);
 		}
 		errno = 0;
 		return r;
@@ -358,21 +358,21 @@ class keystore {
 public:
 
 	keystore(const std::string& hash, const std::string &base = ".opmsg")
-		: cfgbase(base), md(nullptr)
+		: d_cfgbase(base)
 	{
-		md = algo2md(hash);
+		d_md = algo2md(hash);
 	}
 
 
 	~keystore()
 	{
-		for (auto i : personas)
+		for (auto i : d_personas)
 			delete i.second;
 	}
 
 	const EVP_MD *md_type()
 	{
-		return md;
+		return d_md;
 	}
 
 	int load(const std::string &id = "", uint32_t how = LFLAGS_ALL);
@@ -387,7 +387,7 @@ public:
 
 	int size()
 	{
-		return personas.size();
+		return d_personas.size();
 	}
 
 	std::map<std::string, persona *>::iterator first_pers();
@@ -399,7 +399,7 @@ public:
 
 	const char *why()
 	{
-		return err.c_str();
+		return d_err.c_str();
 	}
 };
 

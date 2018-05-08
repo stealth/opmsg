@@ -176,22 +176,22 @@ int keystore::load(const string &hex, uint32_t how)
 	// tells us to just load a single persona of this id
 	if (hex.size() > 16) {
 		// was already loaded? ->load() may be called multiple times
-		if (personas.count(hex) > 0)
+		if (d_personas.count(hex) > 0)
 			return 0;
 
-		unique_ptr<persona> p(new (nothrow) persona(cfgbase, hex));
+		unique_ptr<persona> p(new (nothrow) persona(d_cfgbase, hex));
 		if (!p.get())
 			return build_error("keystore::load:: OOM", -1);
 		if (p->load("", how) < 0)
 			return build_error("keystore::load::" + string(p->why()), -1);
-		personas[hex] = p.release();
+		d_personas[hex] = p.release();
 		return 0;
 	}
 
 	persona *p = nullptr;
 	string dhex = "";
 
-	DIR *d = opendir(cfgbase.c_str());
+	DIR *d = opendir(d_cfgbase.c_str());
 	if (!d)
 		return build_error("load::opendir:", -1);
 
@@ -207,10 +207,10 @@ int keystore::load(const string &hex, uint32_t how)
 		if (hex.size() == 16 && dhex.find(hex) != 0)
 			continue;
 
-		if (personas.count(dhex) > 0)
+		if (d_personas.count(dhex) > 0)
 			continue;
 
-		p = new (nothrow) persona(cfgbase, dhex);
+		p = new (nothrow) persona(d_cfgbase, dhex);
 		if (!p)
 			break;
 
@@ -219,7 +219,7 @@ int keystore::load(const string &hex, uint32_t how)
 			delete p;
 			continue;
 		}
-		personas[dhex] = p;
+		d_personas[dhex] = p;
 
 		// short id was given, no more loads after success
 		if (hex.size() == 16)
@@ -303,8 +303,8 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 
 int keystore::gen_ec(string &pub, string &priv, int nid)
 {
-	err = "keystore::";
-	return opmsg::gen_ec(pub, priv, nid, err);
+	d_err = "keystore::";
+	return opmsg::gen_ec(pub, priv, nid, d_err);
 }
 
 
@@ -378,14 +378,14 @@ persona *keystore::find_persona(const std::string &hex)
 
 	// try to find 64bit shortcuts
 	if (hex.size() == 16) {
-		for (auto i : personas) {
+		for (auto i : d_personas) {
 			if (i.first.find(hex) == 0)
 				return i.second;
 		}
 	}
 
-	auto i = personas.find(hex);
-	if (i == personas.end())
+	auto i = d_personas.find(hex);
+	if (i == d_personas.end())
 		return build_error("find_persona: No such persona.", nullptr);
 	return i->second;
 }
@@ -401,11 +401,11 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 	// create hash (hex view) of public part and use as a reference
 	string hex = "";
 	string pub_pem = c_pub_pem;
-	if (normalize_and_hexhash(md, pub_pem, hex) < 0)
+	if (normalize_and_hexhash(d_md, pub_pem, hex) < 0)
 		return build_error("add_persona: Invalid pubkey blob. Missing BEGIN/END markers?", nullptr);
 
 	string tmpdir;
-	if (mkdir_helper(cfgbase, tmpdir) < 0)
+	if (mkdir_helper(d_cfgbase, tmpdir) < 0)
 		return build_error("add_persona::mkdir:", nullptr);
 
 	if (name.size() > 0) {
@@ -474,7 +474,7 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		close(fd);
 	}
 
-	string hexdir = cfgbase + "/" + hex;
+	string hexdir = d_cfgbase + "/" + hex;
 	if (rename(tmpdir.c_str(), hexdir.c_str()) < 0) {
 		int saved_errno = errno;
 		unlink(string(tmpdir + "/" + type1 + ".priv.pem").c_str());
@@ -485,7 +485,7 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		return build_error("add_persona::rename: Error creating persona " + hex, nullptr);
 	}
 
-	unique_ptr<persona> p(new (nothrow) persona(cfgbase, hex, name));
+	unique_ptr<persona> p(new (nothrow) persona(d_cfgbase, hex, name));
 	if (!p.get())
 		return build_error("add_persona::OOM", nullptr);
 
@@ -503,20 +503,20 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 	}
 
 	// do not free evp_ structs and persona
-	personas[hex] = p.get();
+	d_personas[hex] = p.get();
 	return p.release();
 }
 
 
 map<string, persona *>::iterator keystore::first_pers()
 {
-	return personas.begin();
+	return d_personas.begin();
 }
 
 
 map<string, persona *>::iterator keystore::end_pers()
 {
-	return personas.end();
+	return d_personas.end();
 }
 
 
@@ -908,7 +908,7 @@ DHbox *persona::new_dh_params(const string &pem)
 	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
-	d_dh_params->pub_pem = pem;
+	d_dh_params->d_pub_pem = pem;
 
 	return d_dh_params;
 }
@@ -967,7 +967,7 @@ DHbox *persona::new_dh_params()
 	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
-	d_dh_params->pub_pem = string(buf, r);
+	d_dh_params->d_pub_pem = string(buf, r);
 
 	// do not call DH_free(dh)
 
@@ -1134,7 +1134,7 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	if (!d_dh_params)
 		return build_error("gen_dh_key: Invalid persona. No DH params for " + d_id, -1);
 
-	unique_ptr<DH, DH_del> dh(DHparams_dup(d_dh_params->pub), DH_free);
+	unique_ptr<DH, DH_del> dh(DHparams_dup(d_dh_params->d_pub), DH_free);
 	if (!dh.get() || DH_generate_key(dh.get()) != 1 || DH_check(dh.get(), &ecode) != 1)
 		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + d_id, -1);
 
