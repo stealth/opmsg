@@ -490,8 +490,8 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		return build_error("add_persona::OOM", nullptr);
 
 	p->set_pkey(evp_pub.release(), evp_priv.release());
-	p->pkey->pub_pem = pub_pem;
-	p->pkey->priv_pem = priv_pem;
+	p->d_pkey->pub_pem = pub_pem;
+	p->d_pkey->priv_pem = priv_pem;
 	p->set_type(type1);
 
 	if (dhparams_pem.size() > 0 && type1 == marker::rsa) {
@@ -532,13 +532,13 @@ vector<PKEYbox *> persona::find_dh_key(const string &hex)
 	vector<PKEYbox *> v;
 
 	// In case EC persona peer is out of ephemeral ECDH keys
-	if (hex == marker::ec_kex_id && ptype == marker::ec) {
-		v.push_back(pkey);
+	if (hex == marker::ec_kex_id && d_ptype == marker::ec) {
+		v.push_back(d_pkey);
 		return v;
 	}
 
-	auto i = keys.find(hex);
-	if (i == keys.end())
+	auto i = d_keys.find(hex);
+	if (i == d_keys.end())
 		return build_error("find_dh_key: No such key.", v);
 	return i->second;
 }
@@ -546,13 +546,13 @@ vector<PKEYbox *> persona::find_dh_key(const string &hex)
 
 map<string, vector<PKEYbox *>>::iterator persona::first_key()
 {
-	return keys.begin();
+	return d_keys.begin();
 }
 
 
 map<string, vector<PKEYbox *>>::iterator persona::end_key()
 {
-	return keys.end();
+	return d_keys.end();
 }
 
 
@@ -578,7 +578,7 @@ int persona::load_dh(const string &hex)
 	if (!is_hex_hash(hex))
 		return build_error("load_dh: Not a valid (EC)DH hex id.", -1);
 
-	if (keys.count(hex) > 0)
+	if (d_keys.count(hex) > 0)
 		return build_error("load_dh: This key was already loaded.", -1);
 
 	string dhfile = "";
@@ -589,7 +589,7 @@ int persona::load_dh(const string &hex)
 		dhfile = "";
 
 		// load public part of (EC)DH key
-		dhfile = cfgbase + "/" + id + "/" + hex;
+		dhfile = d_cfgbase + "/" + d_id + "/" + hex;
 		if (i > 0) {
 			char s[32] = {0};
 			snprintf(s, sizeof(s), "/dh.pub.%d.pem", i);
@@ -621,7 +621,7 @@ int persona::load_dh(const string &hex)
 		} while (0);
 
 		// now load private part, if available
-		dhfile = cfgbase + "/" + id + "/" + hex;
+		dhfile = d_cfgbase + "/" + d_id + "/" + hex;
 		if (i > 0) {
 			char s[32] = {0};
 			snprintf(s, sizeof(s), "/dh.priv.%d.pem", i);
@@ -644,7 +644,7 @@ int persona::load_dh(const string &hex)
 		} while (0);
 
 		if (pbox->pub || pbox->priv)
-			keys[hex].push_back(pbox.release());
+			d_keys[hex].push_back(pbox.release());
 		else {
 			// this can happen, as we leave empty dir's for already imported (EC)DH keys, that
 			// are tried to be re-imported from old mails in opmsg versions before using "imported" file
@@ -659,7 +659,7 @@ int persona::load_dh(const string &hex)
 	}
 
 	// check if there was a designated peer. No problem if there isn't.
-	string peerfile = cfgbase + "/" + id + "/" + hex + "/peer";
+	string peerfile = d_cfgbase + "/" + d_id + "/" + hex + "/peer";
 	f.reset(fopen(peerfile.c_str(), "r"));
 	if (f.get()) {
 		char s[512];
@@ -672,7 +672,7 @@ int persona::load_dh(const string &hex)
 		}
 		string peer = string(s);
 		if (is_hex_hash(peer))
-			keys[hex][0]->set_peer_id(peer);
+			d_keys[hex][0]->set_peer_id(peer);
 	}
 
 	errno = 0;
@@ -683,18 +683,18 @@ int persona::load_dh(const string &hex)
 // determine type of a persona
 int persona::check_type()
 {
-	if (!is_hex_hash(id))
+	if (!is_hex_hash(d_id))
 		return build_error("check_type: Not a valid persona id", -1);
 
-	string dir = cfgbase + "/" + id;
+	string dir = d_cfgbase + "/" + d_id;
 	string rsa = dir + "/rsa.pub.pem";
 	struct stat st;
 	if (stat(rsa.c_str(), &st) == 0) {
-		ptype = marker::rsa;
+		d_ptype = marker::rsa;
 	} else {
 		string ec = dir + "/ec.pub.pem";
 		if (stat(ec.c_str(), &st) == 0)
-			ptype = marker::ec;
+			d_ptype = marker::ec;
 		else
 			return build_error("check_type: Neither RSA nor EC keys found for persona.", -1);
 	}
@@ -708,18 +708,18 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 {
 	size_t r = 0;
 	char buf[8192], *fr = nullptr;
-	string dir = cfgbase + "/" + id;
+	string dir = d_cfgbase + "/" + d_id;
 	string file = dir + "/name";
 	string hex = "";
 	DH *dhp = nullptr;
 
-	if (!is_hex_hash(id))
+	if (!is_hex_hash(d_id))
 		return build_error("load: Not a valid persona id", -1);
 	if (dh_hex.size() > 0 && !is_hex_hash(dh_hex))
 		return build_error("load: Not a valid session-key hex id", -1);
 
 	// check our own persona type if not already known
-	if (ptype == marker::unknown) {
+	if (d_ptype == marker::unknown) {
 		if (this->check_type() < 0)
 			return -1;
 	}
@@ -737,7 +737,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
-		name = string(s);
+		d_name = string(s);
 	}
 
 	// load default linked src, if any
@@ -754,7 +754,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 			if (s[slen - 1] == '\n')
 				s[slen - 1] = 0;
 		}
-		link_src = string(s);
+		d_link_src = string(s);
 	}
 
 	// load list of hashes of keys that have been imported once
@@ -776,7 +776,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 			if ((idx = line.find(":")) != string::npos) {
 				string h = line.substr(0, idx);
 				if (is_hex_hash(h))
-					imported[h] = 1;	// timestamp not needed yet
+					d_imported[h] = 1;	// timestamp not needed yet
 			}
 		}
 		unlockf(f.get());
@@ -785,26 +785,26 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	// load EC/RSA persona key
 	string pub_pem = "", priv_pem = "";
 
-	file = dir + "/" + ptype + ".pub.pem";
+	file = dir + "/" + d_ptype + ".pub.pem";
 	f.reset(fopen(file.c_str(), "r"));
 	if (!f.get())
-		return build_error("load: Error reading public key file for " + id, -1);
+		return build_error("load: Error reading public key file for " + d_id, -1);
 
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
 	if (!evp_pub.get())
-		return build_error("load::PEM_read_PUBKEY: Error reading public key file for " + id, -1);
+		return build_error("load::PEM_read_PUBKEY: Error reading public key file for " + d_id, -1);
 	rewind(f.get());
 	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 		return build_error("load::fread:", -1);
 	pub_pem = string(buf, r);
 
-	file = dir + "/" + ptype + ".priv.pem";
+	file = dir + "/" + d_ptype + ".priv.pem";
 	f.reset(fopen(file.c_str(), "r"));
 	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
 	if (f.get()) {
 		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
 		if (!evp_priv.get())
-			return build_error("load::PEM_read_PrivateKey: Error reading private key file for " + id, -1);
+			return build_error("load::PEM_read_PrivateKey: Error reading private key file for " + d_id, -1);
 		rewind(f.get());
 		if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 			return build_error("load::fread:", -1);
@@ -812,17 +812,17 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	}
 
 	set_pkey(evp_pub.release(), evp_priv.release());
-	pkey->pub_pem = pub_pem;
-	pkey->priv_pem = priv_pem;
+	d_pkey->pub_pem = pub_pem;
+	d_pkey->priv_pem = priv_pem;
 
-	if (ptype == marker::rsa) {
+	if (d_ptype == marker::rsa) {
 		// load DH params if avail
 		file = dir + "/dhparams.pem";
 		f.reset(fopen(file.c_str(), "r"));
 		if (f.get()) {
 			if (!PEM_read_DHparams(f.get(), &dhp, nullptr, nullptr))
-				return build_error("load::PEM_read_DHparams: Error reading DH params for " + id, -1);
-			dh_params = new (nothrow) DHbox(dhp, nullptr);
+				return build_error("load::PEM_read_DHparams: Error reading DH params for " + d_id, -1);
+			d_dh_params = new (nothrow) DHbox(dhp, nullptr);
 			// do not free dh
 		}
 	}
@@ -870,10 +870,10 @@ extern "C" void vector_pkeybox_free(vector<PKEYbox *> *v)
 
 PKEYbox *persona::set_pkey(EVP_PKEY *pub, EVP_PKEY *priv)
 {
-	if (pkey)
-		delete pkey;
-	pkey = new (nothrow) PKEYbox(pub, priv);
-	return pkey;
+	if (d_pkey)
+		delete d_pkey;
+	d_pkey = new (nothrow) PKEYbox(pub, priv);
+	return d_pkey;
 }
 
 
@@ -882,10 +882,10 @@ DHbox *persona::new_dh_params(const string &pem)
 {
 	DH *dh = nullptr;
 	int fd = -1;
-	string file = cfgbase + "/" + id + "/dhparams.pem";
+	string file = d_cfgbase + "/" + d_id + "/dhparams.pem";
 
 	if ((fd = open(file.c_str(), O_CREAT|O_RDWR|O_TRUNC, 0600)) < 0)
-		return build_error("new_dh_params::open: Error opening DH params for " + id, nullptr);
+		return build_error("new_dh_params::open: Error opening DH params for " + d_id, nullptr);
 	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
 	if (!f.get()) {
 		close(fd);
@@ -897,20 +897,20 @@ DHbox *persona::new_dh_params(const string &pem)
 	rewind(f.get());
 
 	if (!PEM_read_DHparams(f.get(), &dh, nullptr, nullptr))
-		return build_error("new_dh_params::PEM_read_DHparams: Error reading DH params for " + id, nullptr);
+		return build_error("new_dh_params::PEM_read_DHparams: Error reading DH params for " + d_id, nullptr);
 
 	f.reset();	// calls unlock
 
-	if (dh_params)
-		delete dh_params;
+	if (d_dh_params)
+		delete d_dh_params;
 
-	dh_params = new (nothrow) DHbox(dh, nullptr);
-	if (!dh_params)
+	d_dh_params = new (nothrow) DHbox(dh, nullptr);
+	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
-	dh_params->pub_pem = pem;
+	d_dh_params->pub_pem = pem;
 
-	return dh_params;
+	return d_dh_params;
 }
 
 
@@ -939,11 +939,11 @@ DHbox *persona::new_dh_params()
 
 	BN_GENCB_set(cb_ptr, key_cb, nullptr);
 	if (DH_generate_parameters_ex(dh.get(), config::dh_plen, 5, cb_ptr) != 1 || DH_check(dh.get(), &ecode) != 1)
-		return build_error("new_dh_paramms::DH_generate_parameters_ex: Error generating DH params for " + id, nullptr);
+		return build_error("new_dh_paramms::DH_generate_parameters_ex: Error generating DH params for " + d_id, nullptr);
 
-	string file = cfgbase + "/" + id + "/dhparams.pem";
+	string file = d_cfgbase + "/" + d_id + "/dhparams.pem";
 	if ((fd = open(file.c_str(), O_CREAT|O_RDWR|O_TRUNC, 0600)) < 0)
-		return build_error("new_dh_params::open: Error opening DH params for " + id, nullptr);
+		return build_error("new_dh_params::open: Error opening DH params for " + d_id, nullptr);
 	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
 	if (!f.get()) {
 		close(fd);
@@ -951,27 +951,27 @@ DHbox *persona::new_dh_params()
 	}
 	wlockf(f.get());
 	if (PEM_write_DHparams(f.get(), dh.get()) != 1)
-		return build_error("new_dh_params::PEM_write_DHparams: Error writing DH params for " + id, nullptr);
+		return build_error("new_dh_params::PEM_write_DHparams: Error writing DH params for " + d_id, nullptr);
 	rewind(f.get());
 
 	char buf[8192];
 	if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
-		return build_error("new_dh_params::fread: Error generating DH params for " + id, nullptr);
+		return build_error("new_dh_params::fread: Error generating DH params for " + d_id, nullptr);
 
 	f.reset();	// calls unlock
 
-	if (dh_params)
-		delete dh_params;
+	if (d_dh_params)
+		delete d_dh_params;
 
-	dh_params = new (nothrow) DHbox(dh.release(), nullptr);
-	if (!dh_params)
+	d_dh_params = new (nothrow) DHbox(dh.release(), nullptr);
+	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
-	dh_params->pub_pem = string(buf, r);
+	d_dh_params->pub_pem = string(buf, r);
 
 	// do not call DH_free(dh)
 
-	return dh_params;
+	return d_dh_params;
 }
 
 
@@ -994,13 +994,13 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	vector<PKEYbox *> v0;
 	string hex = "", h = "";
 
-	if (ptype == marker::ec || config::ecdh_rsa) {
-		err = "persona::gen_kex_key::";
+	if (d_ptype == marker::ec || config::ecdh_rsa) {
+		d_err = "persona::gen_kex_key::";
 		// for each defined curve
 		for (unsigned int i = 0; i < config::curve_nids.size(); ++i) {
-			if (opmsg::gen_ec(pub_pem, priv_pem, config::curve_nids[i], err) < 0)
+			if (opmsg::gen_ec(pub_pem, priv_pem, config::curve_nids[i], d_err) < 0)
 				return v0;
-			err = "";
+			d_err = "";
 			if (normalize_and_hexhash(md, pub_pem, h) < 0)
 				return build_error("gen_kex_key::normalize_and_hexhash: Cant hash key.", v0);
 			// first curve makes the hex-id
@@ -1016,15 +1016,15 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	}
 
 	// unlikely...
-	if (keys.count(hex) > 0)
-		return keys[hex];
+	if (d_keys.count(hex) > 0)
+		return d_keys[hex];
 
-	string hexdir = cfgbase + "/" + id + "/" + hex;
+	string hexdir = d_cfgbase + "/" + d_id + "/" + hex;
 	if (stat(hexdir.c_str(), &st) == 0)
 		return build_error("gen_kex_key: Error storing ECDH keys " + hex, v0);
 
 	string tmpdir = "";
-	if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
+	if (mkdir_helper(d_cfgbase + "/" + d_id, tmpdir) < 0)
 		return build_error("gen_kex_key::mkdir:", v0);
 
 	unique_ptr<vector<PKEYbox *>, vector_pkeybox_del> pboxes(new (nothrow) vector<PKEYbox *>, vector_pkeybox_free);
@@ -1117,8 +1117,8 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 		return build_error("gen_kex_key: Error storing ECDH keys " + hex, v0);
 	}
 
-	keys[hex] = *(pboxes.release());
-	return keys[hex];
+	d_keys[hex] = *(pboxes.release());
+	return d_keys[hex];
 }
 
 
@@ -1131,12 +1131,12 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-	if (!dh_params)
-		return build_error("gen_dh_key: Invalid persona. No DH params for " + id, -1);
+	if (!d_dh_params)
+		return build_error("gen_dh_key: Invalid persona. No DH params for " + d_id, -1);
 
-	unique_ptr<DH, DH_del> dh(DHparams_dup(dh_params->pub), DH_free);
+	unique_ptr<DH, DH_del> dh(DHparams_dup(d_dh_params->pub), DH_free);
 	if (!dh.get() || DH_generate_key(dh.get()) != 1 || DH_check(dh.get(), &ecode) != 1)
-		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + id, -1);
+		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + d_id, -1);
 
 	hex = "";
 	pub = "";
@@ -1182,7 +1182,7 @@ void persona::used_key(const string &hexid, bool u)
 	if (hexid == marker::rsa_kex_id || hexid == marker::ec_kex_id)
 		return;
 
-	string file = cfgbase + "/" + id + "/" + hexid + "/used";
+	string file = d_cfgbase + "/" + d_id + "/" + hexid + "/used";
 	if (!u)
 		unlink(file.c_str());
 	else
@@ -1251,7 +1251,7 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 		} else
 			return build_error("add_dh_pubkey: Unknown key type.", v0);
 
-		hexdir = cfgbase + "/" + id + "/" + hex;
+		hexdir = d_cfgbase + "/" + d_id + "/" + hex;
 
 		if (i == 0) {
 			// some remote persona tries to import a key twice?
@@ -1260,10 +1260,10 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 			// would not fail on empty target dirs.)
 			// Needed since older opmsg versions leave empty hexdir instead of recording
 			// it in "imported" file
-			if (imported.count(hex) > 0 || keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
+			if (d_imported.count(hex) > 0 || d_keys.count(hex) > 0 || stat(hexdir.c_str(), &st) == 0)
 				return build_error("add_dh_pubkey: Key already exist(ed).", v0);
 
-			if (mkdir_helper(cfgbase + "/" + id, tmpdir) < 0)
+			if (mkdir_helper(d_cfgbase + "/" + d_id, tmpdir) < 0)
 				return build_error("add_dh_key::mkdir:", v0);
 
 			dhfile = tmpdir + "/dh.pub.pem";
@@ -1300,8 +1300,8 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 	}
 
 	// record this key id as imported
-	imported[hex] = 1;
-	string imfile = cfgbase + "/" + id + "/imported";
+	d_imported[hex] = 1;
+	string imfile = d_cfgbase + "/" + d_id + "/imported";
 	f.reset(fopen(imfile.c_str(), "a"));
 	if (f.get()) {
 		wlockf(f.get());
@@ -1309,9 +1309,9 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 	}
 	f.reset();	// calls unlock
 
-	keys[hex] = *(pboxes.release());
+	d_keys[hex] = *(pboxes.release());
 
-	return keys[hex];
+	return d_keys[hex];
 }
 
 
@@ -1323,11 +1323,11 @@ int persona::del_dh_id(const string &hex)
 	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
 		return 0;
 
-	string dir = cfgbase + "/" + id + "/" + hex;
-	if (keys.count(hex) > 0) {
-		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it)
+	string dir = d_cfgbase + "/" + d_id + "/" + hex;
+	if (d_keys.count(hex) > 0) {
+		for (auto it = d_keys[hex].begin(); it != d_keys[hex].end(); ++it)
 			delete *it;
-		keys.erase(hex);
+		d_keys.erase(hex);
 	}
 	return rmdir(dir.c_str());
 }
@@ -1341,9 +1341,9 @@ int persona::del_dh_priv(const string &hex)
 	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
 		return 0;
 
-	string base = cfgbase + "/" + id + "/" + hex;
-	string used = cfgbase + "/" + id + "/" + hex + "/used";
-	string peer = cfgbase + "/" + id + "/" + hex + "/peer";
+	string base = d_cfgbase + "/" + d_id + "/" + hex;
+	string used = d_cfgbase + "/" + d_id + "/" + hex + "/used";
+	string peer = d_cfgbase + "/" + d_id + "/" + hex + "/peer";
 
 	int j = 0;
 	struct stat st = {0};
@@ -1376,8 +1376,8 @@ int persona::del_dh_priv(const string &hex)
 	unlink(used.c_str());
 	unlink(peer.c_str());
 
-	if (keys.count(hex) > 0) {
-		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it) {
+	if (d_keys.count(hex) > 0) {
+		for (auto it = d_keys[hex].begin(); it != d_keys[hex].end(); ++it) {
 			(*it)->priv_pem = "";
 			EVP_PKEY_free((*it)->priv); (*it)->priv = nullptr;
 		}
@@ -1396,12 +1396,12 @@ int persona::del_dh_pub(const string &hex)
 	if (hex == marker::rsa_kex_id || hex == marker::ec_kex_id)
 		return 0;
 
-	string file = cfgbase + "/" + id + "/" + hex;
+	string file = d_cfgbase + "/" + d_id + "/" + hex;
 	for (const string &s : vector<string>{"/dh.pub.pem", "/dh.pub.1.pem", "/dh.pub.2.pem"})
 		unlink((file + s).c_str());
 
-	if (keys.count(hex) > 0) {
-		for (auto it = keys[hex].begin(); it != keys[hex].end(); ++it) {
+	if (d_keys.count(hex) > 0) {
+		for (auto it = d_keys[hex].begin(); it != d_keys[hex].end(); ++it) {
 			(*it)->pub_pem = "";
 			EVP_PKEY_free((*it)->pub); (*it)->pub = nullptr;
 		}
@@ -1415,7 +1415,7 @@ int persona::link(const string &hex)
 	if (!is_hex_hash(hex))
 		return build_error("link: Invalid src id.", -1);
 
-	string file = cfgbase + "/" + id + "/srclink";
+	string file = d_cfgbase + "/" + d_id + "/srclink";
 
 	int saved_errno = 0;
 	int fd = open(file.c_str(), O_RDWR|O_CREAT|O_TRUNC, 0600);

@@ -156,33 +156,33 @@ typedef enum : uint32_t {
 
 class persona {
 
-	std::string id, name, link_src, ptype;
+	std::string d_id, d_name, d_link_src, d_ptype;
 
 	// The (EC)DH 'session' keys this persona holds
-	std::map<std::string, std::vector<PKEYbox *>> keys;
+	std::map<std::string, std::vector<PKEYbox *>> d_keys;
 
 	// List of hashes of all imported keys so far
-	std::map<std::string, unsigned int> imported;
+	std::map<std::string, unsigned int> d_imported;
 
-	PKEYbox *pkey;
-	DHbox *dh_params;
+	PKEYbox *d_pkey;
+	DHbox *d_dh_params;
 
-	std::string cfgbase, err;
+	std::string d_cfgbase, d_err;
 
 	template<class T>
 	T build_error(const std::string &msg, T r)
 	{
 		int e = 0;
-		err = "persona::";
-		err += msg;
+		d_err = "persona::";
+		d_err += msg;
 		if ((e = ERR_get_error())) {
 			ERR_load_crypto_strings();
-			err += ":";
-			err += ERR_error_string(e, nullptr);
+			d_err += ":";
+			d_err += ERR_error_string(e, nullptr);
 			ERR_clear_error();
 		} else if (errno) {
-			err += ":";
-			err += strerror(errno);
+			d_err += ":";
+			d_err += strerror(errno);
 		}
 		errno = 0;
 		return r;
@@ -193,34 +193,34 @@ class persona {
 public:
 
 	persona(const std::string &dir, const std::string &hash, const std::string &n = "")
-		: id(hash), name(n), link_src(""), pkey(nullptr), dh_params(nullptr), cfgbase(dir), err("")
+		: d_id(hash), d_name(n), d_link_src(""), d_pkey(nullptr), d_dh_params(nullptr), d_cfgbase(dir), d_err("")
 	{
-		if (!is_hex_hash(id))
-			id = "dead";
+		if (!is_hex_hash(d_id))
+			d_id = "dead";
 
-		ptype = marker::unknown;
+		d_ptype = marker::unknown;
 	}
 
 	virtual ~persona()
 	{
-		for (auto i = keys.begin(); i != keys.end(); ++i) {
+		for (auto i = d_keys.begin(); i != d_keys.end(); ++i) {
 			for (auto j = i->second.begin(); j != i->second.end(); ++j)
 				delete *j;
 		}
 
-		delete pkey;
-		delete dh_params;
+		delete d_pkey;
+		delete d_dh_params;
 	}
 
 	void set_type(const std::string &t)
 	{
 		if (t == marker::rsa || t == marker::ec)
-			ptype = t;
+			d_ptype = t;
 	}
 
 	std::string get_type()
 	{
-		return ptype;
+		return d_ptype;
 	}
 
 	int check_type();
@@ -232,12 +232,12 @@ public:
 
 	bool can_encrypt()
 	{
-		return pkey != nullptr && pkey->pub != nullptr;
+		return d_pkey != nullptr && d_pkey->pub != nullptr;
 	}
 
 	bool can_sign()
 	{
-		return pkey != nullptr && pkey->priv != nullptr;
+		return d_pkey != nullptr && d_pkey->priv != nullptr;
 	}
 
 	bool can_decrypt()
@@ -247,8 +247,8 @@ public:
 
 	bool can_kex_gen()
 	{
-		if (ptype == marker::rsa)
-			return dh_params != nullptr && dh_params->pub != nullptr;
+		if (d_ptype == marker::rsa)
+			return d_dh_params != nullptr && d_dh_params->pub != nullptr;
 		return true;
 	}
 
@@ -256,22 +256,22 @@ public:
 
 	PKEYbox *get_pkey()
 	{
-		return pkey;
+		return d_pkey;
 	}
 
 	std::string get_id()
 	{
-		return id;
+		return d_id;
 	}
 
 	std::string get_name()
 	{
-		return name;
+		return d_name;
 	}
 
 	std::string linked_src()
 	{
-		return link_src;
+		return d_link_src;
 	}
 
 	DHbox *new_dh_params();
@@ -298,7 +298,7 @@ public:
 
 	bool has_imported(const std::string &hex)
 	{
-		return imported.count(hex) > 0;
+		return d_imported.count(hex) > 0;
 	}
 
 	void used_key(const std::string &hex, bool);
@@ -315,12 +315,12 @@ public:
 
 	int size()
 	{
-		return keys.size();
+		return d_keys.size();
 	}
 
 	const char *why()
 	{
-		return err.c_str();
+		return d_err.c_str();
 	}
 
 	friend class keystore;
