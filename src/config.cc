@@ -72,6 +72,8 @@ bool ecdh_rsa = 0;
 
 std::string cfgbase = ".opmsg";
 
+std::string brainkey1 = "";
+
 }
 
 using namespace std;

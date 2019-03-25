@@ -26,9 +26,9 @@ INC=
 
 
 # LibreSSL setups, define your paths here
-#INC+=-I/usr/local/libressl/include
-#LIBS+=-L/usr/local/libressl/lib64
-#LIBS+=-Wl,--rpath=/usr/local/libressl/lib64
+#INC+=-I/opt/ssl/libressl-2.8.1/include
+#LIBS+=-L/opt/ssl/libressl-2.8.1/lib
+#LIBS+=-Wl,--rpath=/opt/ssl/libressl-2.8.1/lib
 #DEFS+=-DHAVE_BN_GENCB_NEW=0
 #DEFS+=-DHAVE_LIBRESSL
 
@@ -51,6 +51,7 @@ INC=
 ### No editing should be needed below this line.
 ###
 
+.PHONY: all build contrib clean distclean
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
@@ -59,56 +60,66 @@ LDFLAGS=
 LIBS+=-lcrypto
 
 
-all: opmsg
+all: build build/opmsg
 
-contrib: opmux opcoin
+contrib: build build/opmux build/opcoin
 
-opmsg: keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o missing.o
-	$(LD) keystore.o opmsg.o misc.o config.o message.o marker.o base64.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
+build/opmsg: build/keystore.o build/opmsg.o build/misc.o build/config.o build/message.o build/marker.o build/base64.o build/deleters.o build/missing.o build/brainkey.o
+	$(LD) build/keystore.o build/opmsg.o build/misc.o build/config.o build/message.o build/marker.o build/base64.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
 
-opcoin: keystore.o opcoin.o config.o deleters.o base58.o misc.o marker.o deleters.o missing.o
-	$(LD) keystore.o opcoin.o config.o base58.o misc.o marker.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
+build/opcoin: build/keystore.o build/opcoin.o build/config.o build/deleters.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o
+	$(LD) build/keystore.o build/opcoin.o build/config.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
 
-opmux: keystore.o opmux.o misc.o marker.o config.o deleters.o missing.o
-	$(LD) keystore.o opmux.o misc.o marker.o config.o deleters.o missing.o $(LDFLAGS) $(LIBS) -o $@
+build/opmux: build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o
+	$(LD) build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
 
-opmux.o: contrib/opmux.cc
-	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
+build/opmux.o: contrib/opmux.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $< -o build/opmux.o
 
-opcoin.o: contrib/opcoin.cc
-	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
+build/opcoin.o: contrib/opcoin.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $< -o build/opcoin.o
 
-base58.o: contrib/base58.cc
-	$(CXX) -I . -I .. $(CXXFLAGS) -c $<
+build/base58.o: contrib/base58.cc
+	$(CXX) -I . -I .. $(CXXFLAGS) -c $< -o build/base58.o
 
-opmsg.o: opmsg.cc
-	$(CXX) $(CXXFLAGS) -c $<
+build/opmsg.o: opmsg.cc
+	$(CXX) $(CXXFLAGS) -c $< -o build/opmsg.o
 
-marker.o: marker.cc marker.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/marker.o: marker.cc marker.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/marker.o
 
-keystore.o: keystore.cc keystore.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/keystore.o: keystore.cc keystore.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/keystore.o
 
-base64.o: base64.cc base64.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/base64.o: base64.cc base64.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/base64.o
 
-misc.o: misc.cc misc.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/misc.o: misc.cc misc.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/misc.o
 
-config.o: config.cc config.h numbers.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/config.o: config.cc config.h numbers.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/config.o
 
-message.o: message.cc message.h numbers.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/message.o: message.cc message.h numbers.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/message.o
 
-deleters.o: deleters.cc
-	$(CXX) $(CXXFLAGS) -c $<
+build/deleters.o: deleters.cc
+	$(CXX) $(CXXFLAGS) -c $< -o build/deleters.o
 
-missing.o: missing.cc missing.h
-	$(CXX) $(CXXFLAGS) -c $<
+build/missing.o: missing.cc missing.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/missing.o
+
+build/brainkey.o: brainkey.cc brainkey.h
+	$(CXX) $(CXXFLAGS) -c $< -o build/brainkey.o
+
+build:
+	mkdir build || true
 
 clean:
-	rm -rf *.o opmsg
+	rm -rf build/*.o
+
+distclean:
+	rm -rf build
+
 
 

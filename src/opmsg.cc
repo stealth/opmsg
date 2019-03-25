@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2017 by Sebastian Krahmer,
+ * (C) 2015-2019 by Sebastian Krahmer,
  *               sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -60,6 +60,7 @@ enum {
 	NEWECP			= 6,
 	DENIABLE		= 7,
 	FREEHUGS		= 8,
+	BRAINKEY1		= 9,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -77,7 +78,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.78 -- (C) 2018 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.79 -- (C) 2019 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -105,8 +106,8 @@ void usage(const char *p)
 {
 	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
-	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]"<<endl
-	    <<"\t[--phash name [--name name] [--in infile] [--out outfile]"<<endl
+	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1]"<<endl
+	    <<"\t[--calgo name] [--phash name [--name name] [--in infile] [--out outfile]"<<endl
 	    <<"\t[--link target id] [--deniable] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
@@ -127,6 +128,7 @@ void usage(const char *p)
 	    <<"\t--link\t\t\tlink (your) --persona as default src to this"<<endl
 	    <<"\t\t\t\ttarget id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
+	    <<"\t--brainkey1\t\tuse secret to derive deniable persona keys"<<endl
 	    <<"\t--calgo,\t-C\tuse this algo for encryption"<<endl
 	    <<"\t--phash,\t-p\tuse this hash algo for hashing personas"<<endl
 	    <<"\t--in,\t\t-i\tinput file (stdin)"<<endl
@@ -610,7 +612,16 @@ int do_newpersona(const string &name, const string &type, bool sign)
 	if (config::deniable) {
 		if (p->link(p->get_id()) < 0)
 			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl;
-		estr<<prefix<<"You created a deniable persona.\n"<<prefix<<"SEND BOTH KEYS ONLY ACROSS EXISTING _SECURE_ OPMSG CHANNEL.\n";
+		estr<<prefix<<"You created a deniable persona.\n";
+
+		if (config::brainkey1.size() > 0) {
+			estr<<prefix<<"Your persona key was derived from a brainkey. No need to exchange keys\n"
+			    <<prefix<<"with your peer. Your peer just needs to execute the same command as you\n"
+			    <<prefix<<"in order to create the same deniable persona on their side.\n\n";
+			eflush();
+			return 0;
+		} else
+			estr<<prefix<<"SEND BOTH KEYS ONLY ACROSS EXISTING _SECURE_ OPMSG CHANNEL.\n";
 	}
 
 	estr<<prefix<<"Tell your remote peer to add the following pubkey like this:\n";
@@ -877,6 +888,24 @@ void sig_int(int x)
 }
 
 
+int check_valid_options(int cmode)
+{
+	// never ever use brainkeys for non-deniable personas or any other
+	// mode than EC persona generation
+	if (config::brainkey1.size() > 0) {
+		if (!config::deniable || cmode != CMODE_NEWECP) {
+			estr<<prefix<<"ERROR: Invalid combination of options!\n"; eflush();
+			return -1;
+		}
+		if (config::brainkey1.size() < 16) {
+			estr<<prefix<<"ERROR: brainkey size must be 16bytes minimum!\n"; eflush();
+			return -1;
+		}
+	}
+	return 0;
+}
+
+
 int main(int argc, char **argv)
 {
 
@@ -906,10 +935,12 @@ int main(int argc, char **argv)
 	        {"burn", no_argument, nullptr, BURN},
 	        {"in", required_argument, nullptr, 'i'},
 	        {"out", required_argument, nullptr, 'o'},
+		{"brainkey1", optional_argument, nullptr, BRAINKEY1},
 	        {"freehugs", no_argument, nullptr, FREEHUGS},
 	        {nullptr, 0, nullptr, 0}};
 
 	int c = 1, opt_idx = 0, cmode = CMODE_INVALID, r = -1;
+	char bkbuf[256] = {0}, *nl = nullptr;
 	string detached_file = "", verify_file = "", name = "", link_src = "", s = "";
 	string::size_type ridx = string::npos;
 	vector<string> dst_ids;
@@ -1075,6 +1106,24 @@ int main(int argc, char **argv)
 		case DENIABLE:
 			config::deniable = 1;
 			break;
+		case BRAINKEY1:
+			if (optarg)
+				config::brainkey1 = optarg;
+			else {
+				estr<<prefix<<"Enter the brainkey, 16 chars minimum (echoed): ";
+				eflush();
+				if (read(0, bkbuf, sizeof(bkbuf) - 1) <= 2) {
+					estr<<prefix<<"Aborted.\n\n"<<prefix<<"FAILED.\n";
+					eflush();
+					return -1;
+				}
+				if ((nl = strchr(bkbuf, '\r')))
+					*nl = 0;
+				if ((nl = strchr(bkbuf, '\n')))
+					*nl = 0;
+				config::brainkey1 = bkbuf;
+			}
+			break;
 		case FREEHUGS:
 			cmode = CMODE_FREEHUGS;
 			break;
@@ -1087,6 +1136,9 @@ int main(int argc, char **argv)
 	if (cmode == CMODE_FREEHUGS) {
 		ostr<<"HUG, HUG - sell a bug.\n"; oflush();
 	}
+
+	if (check_valid_options(cmode) < 0)
+		return -1;
 
 	if (!is_valid_halgo(config::phash)) {
 		estr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";

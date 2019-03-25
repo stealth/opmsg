@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2017 by Sebastian Krahmer,
+ * (C) 2015-2019 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -46,6 +46,7 @@ extern "C" {
 #include "marker.h"
 #include "deleters.h"
 #include "keystore.h"
+#include "brainkey.h"
 #include "config.h"
 #include "misc.h"
 
@@ -249,7 +250,7 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 		return -1;
 	}
 
-	if (EC_KEY_generate_key(eckey.get()) != 1) {
+	if (opmsg::EC_KEY_generate_key(eckey.get()) != 1) {
 		err += build_error("gen_ec::EC_KEY_generate_key:");
 		return -1;
 	}

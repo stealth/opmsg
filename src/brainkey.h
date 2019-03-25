@@ -18,3 +18,18 @@
  * along with opmsg.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#ifndef opmsg_brainkey_h
+#define opmsg_brainkey_h
+
+extern "C" {
+#include <openssl/ec.h>
+}
+
+namespace opmsg {
+
+int EC_KEY_generate_key(EC_KEY *);
+
+}
+
+#endif
+
