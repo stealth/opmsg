@@ -269,13 +269,6 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 		err += build_error("gen_ec::EVP_PKEY_set1_EC_KEY: Error generating EC key");
 		return -1;
 	}
-
-/*	unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(evp.get(), nullptr), EVP_PKEY_CTX_free);
-	if (!ctx.get())
-		return build_error("gen_ec: OOM", -1);
-	if (EVP_PKEY_CTX_ctrl_str(ctx.get(), "ec_param_enc", "explicit") <= 0)
-		return build_error("gen_ec::EVP_PKEY_CTX_ctrl_str:", -1);
-*/
 	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1) {
 		err += build_error("gen_ec::PEM_write_bio_PUBKEY: Error generating EC key");
 		return -1;

@@ -210,7 +210,7 @@ int EC_KEY_generate_key(EC_KEY *eckey)
 	unique_ptr<BIGNUM, BIGNUM_del> priv_key(BN_new(), BN_free);
 	unique_ptr<EC_POINT, EC_POINT_del> pub_key(EC_POINT_new(ec_grp), EC_POINT_free);
 
-	if (!ctx.get() || !order.get() || !priv_key.get() || !pub_key.get())
+	if (!ctx.get() || !order.get() || !priv_key.get() || !pub_key.get() || !ec_grp)
 		return 0;
 
 	if (EC_GROUP_get_order(ec_grp, order.get(), nullptr) != 1)
@@ -228,6 +228,16 @@ int EC_KEY_generate_key(EC_KEY *eckey)
 		return 0;
 	if (EC_KEY_set_public_key(eckey, pub_key.get()) != 1)
 		return 0;
+
+	// important to set the encoding forms so that the PEM is equal
+	// among libressl and openssl, which use different forms by default
+	// to have the same persona hash on both sides
+	EC_KEY_set_conv_form(eckey, POINT_CONVERSION_COMPRESSED);
+
+#ifndef OPENSSL_EC_NAMED_CURVE
+#define OPENSSL_EC_NAMED_CURVE 0x1
+#endif
+	EC_KEY_set_asn1_flag(eckey, OPENSSL_EC_NAMED_CURVE);
 
 	return 1;
 }

@@ -24,6 +24,10 @@ INC=
 #LIBS+=-L/usr/local/ossl-1.1.0f/lib
 #LIBS+=-Wl,--rpath=/usr/local/ossl-1.1.0f/lib
 
+#INC+=-I/opt/ssl/openssl-1.1.1/include
+#LIBS+=-L/opt/ssl/openssl-1.1.1/lib
+#LIBS+=-Wl,--rpath=/opt/ssl/openssl-1.1.1/lib
+
 
 # LibreSSL setups, define your paths here
 #INC+=-I/opt/ssl/libressl-2.8.1/include
