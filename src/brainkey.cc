@@ -170,11 +170,11 @@ int EC_KEY_generate_key(EC_KEY *eckey)
 		return 0;
 
 	do {
-		if (!bk_bnrand_range(priv_key.get(), order.get()))
+		if (bk_bnrand_range(priv_key.get(), order.get()) != 1)
 			return 0;
 	} while (BN_is_zero(priv_key.get()));
 
-	if (!EC_POINT_mul(ec_grp, pub_key.get(), priv_key.get(), nullptr, nullptr, ctx.get()))
+	if (EC_POINT_mul(ec_grp, pub_key.get(), priv_key.get(), nullptr, nullptr, ctx.get()) != 1)
 		return 0;
 
 	if (EC_KEY_set_private_key(eckey, priv_key.get()) != 1)
