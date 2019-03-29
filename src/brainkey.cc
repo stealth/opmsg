@@ -39,12 +39,6 @@ namespace opmsg {
 using namespace std;
 
 
-// own enum, b/c libressl is missing defines
-enum {
-	bk_BN_RAND_TOP_ANY     = -1,
-	bk_BN_RAND_BOTTOM_ANY  = 0
-};
-
 // Additionally to having the functions inside opmsg ns and
 // having them static, we prefix them with bk_, so that in no event
 // (even with potential compiler function-visibility bugs), our
@@ -88,18 +82,11 @@ static int bk_RAND_bytes(unsigned char *buf, int buflen)
 }
 
 
-static int bk_bnrand(BIGNUM *rnd, int bits, int top, int bottom)
+static int bk_bnrand(BIGNUM *rnd, int bits)
 {
-	int b = 0, bit = 0, bytes = 0, mask = 0;
+	int bit = 0, bytes = 0, mask = 0;
 
-	if (bits == 0) {
-		if (top != bk_BN_RAND_TOP_ANY || bottom != bk_BN_RAND_BOTTOM_ANY)
-			return 0;
-		BN_zero(rnd);
-		return 1;
-	}
-
-	if (bits < 0 || (bits == 1 && top > 0))
+	if (bits <= 0)
 		return 0;
 
 	bytes = (bits + 7) / 8;
@@ -110,91 +97,57 @@ static int bk_bnrand(BIGNUM *rnd, int bits, int top, int bottom)
 	if (!buf.get())
 		return 0;
 
-	// make a random number and set the top and bottom bits
-	// calls opmsg:: version
-	if ((b = bk_RAND_bytes(buf.get(), bytes)) <= 0)
+	if (bk_RAND_bytes(buf.get(), bytes) != bytes)
 		return 0;
 
-	if (top >= 0) {
-		if (top) {
-			if (bit == 0) {
-				buf[0] = 1;
-				buf[1] |= 0x80;
-			} else {
-				buf[0] |= (3 << (bit - 1));
-			}
-		} else {
-			buf[0] |= (1 << bit);
-		}
-	}
 	buf[0] &= ~mask;
-	if (bottom)				 /* set bottom bit if requested */
-		buf[bytes - 1] |= 1;
 	if (!BN_bin2bn(buf.get(), bytes, rnd))
 		return 0;
 
-	// defined empty if !BN_DEBUG
-	//bn_check_top(rnd);
 	return 1;
 }
 
 
-/* random number r:  0 <= r < range */
+// this function is logically based on what openssl and libressl
+// are doing
 static int bk_bnrand_range(BIGNUM *r, const BIGNUM *range)
 {
-	int n;
-	int count = 100;
 
 	if (BN_is_negative(range) || BN_is_zero(range))
 		return 0;
 
-	n = BN_num_bits(range);	 /* n > 0 */
-
-	/* BN_is_bit_set(range, n - 1) always holds */
+	int count = 1000;
+	int n = BN_num_bits(range);
 
 	if (n == 1) {
 		BN_zero(r);
 	} else if (!BN_is_bit_set(range, n - 2) && !BN_is_bit_set(range, n - 3)) {
-		/*
-		 * range = 100..._2, so 3*range (= 11..._2) is exactly one bit longer
-		 * than range
-		 */
 		do {
-			if (!bk_bnrand(r, n + 1, bk_BN_RAND_TOP_ANY, bk_BN_RAND_BOTTOM_ANY))
+			if (bk_bnrand(r, n + 1) != 1)
 				return 0;
 
-			/*
-			 * If r < 3*range, use r := r MOD range (which is either r, r -
-			 * range, or r - 2*range). Otherwise, iterate once more. Since
-			 * 3*range = 11..._2, each iteration succeeds with probability >=
-			 * .75.
-			 */
 			if (BN_cmp(r, range) >= 0) {
-				if (!BN_sub(r, r, range))
+				if (BN_sub(r, r, range) != 1)
 					return 0;
-				if (BN_cmp(r, range) >= 0)
-					if (!BN_sub(r, r, range))
+				if (BN_cmp(r, range) >= 0) {
+					if (BN_sub(r, r, range) != 1)
 						return 0;
+				}
 			}
 
 			if (!--count)
 				return 0;
-		}
-		while (BN_cmp(r, range) >= 0);
+		} while (BN_cmp(r, range) >= 0);
 	} else {
 		do {
-			/* range = 11..._2  or  range = 101..._2 */
-			if (!bk_bnrand(r, n, bk_BN_RAND_TOP_ANY, bk_BN_RAND_BOTTOM_ANY))
+			if (bk_bnrand(r, n) != 1)
 				return 0;
 
 			if (!--count)
 				return 0;
-		}
-		while (BN_cmp(r, range) >= 0);
+		} while (BN_cmp(r, range) >= 0);
 	}
 
-	// defined empty if !BN_DEBUG
-	//bn_check_top(r);
 	return 1;
 }
 
