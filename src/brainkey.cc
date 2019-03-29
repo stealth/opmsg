@@ -73,7 +73,7 @@ static int bk_RAND_bytes(unsigned char *buf, int buflen)
 
 		if (PKCS5_PBKDF2_HMAC(pass.c_str(), pass.size(),
 		    reinterpret_cast<unsigned char *>(saltbuf),
-		    strlen(saltbuf), 10000,
+		    strlen(saltbuf), 10000000,
 	            EVP_sha256(), sizeof(out), out) != 1)
 			return 0;
 
