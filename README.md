@@ -59,9 +59,10 @@ It successfully builds on _Linux_, _OSX_, _OpenBSD_ and probably a lot of others
 
 
 ```
+$ cd src
 $ make
 [...]
-$ cp opmsg /usr/local/bin/
+$ cp build/opmsg /usr/local/bin/
 $ mkdir ~/.opmsg && touch ~/.opmsg/config
 $ opmsg
 
@@ -279,6 +280,52 @@ forensic artifacts and dont want to cite your peer in reply-messages as this pro
 that you were able to decrypt a mail from your peer, e.g. you are hold of a certain
 private session key (`kex-id`). Thats a common mistake people make who dont sign
 their emails and think everything is deniable.
+
+
+Brainkey Personas
+-----------------
+
+Brainkey personas are deniable personas whose key was not generated via RNG
+input, but which are derived from a passphrase. They are very similar to the
+concept of BTC brainwallets:
+
+```
+$ opmsg --name nobrainer --deniable --salt1 1234 --brainkey1 --newecp
+
+opmsg: version=1.79 (C) 2019 Sebastian Krahmer: https://github.com/stealth/opmsg
+
+opmsg: Enter the brainkey, 16 chars minimum (echoed): mysupersecretnobodyknows
+opmsg: creating new EC persona (curve secp521r1)
+
+
+
+opmsg: Successfully generated persona with id
+opmsg: a6da74f688c375d8 96858709ffd1a25f d42e6523bb89d0f2 45cfe554cf7b4e7c
+opmsg: You created a deniable persona.
+opmsg: Your persona key was derived from a brainkey. No need to exchange keys
+opmsg: with your peer. Your peer just needs to execute the same command as you
+opmsg: in order to create the same deniable persona on their side.
+
+opmsg: SUCCESS.
+```
+
+Ofcorse, you should use a secret that nobody can guess or bruteforce, including
+upper and lower-case, digits and so on. The idea behind brainkey personas is,
+that you share a secret with your peer once you meet, and both sides can
+then generate the same personas independently afterwards. There's no need to verify
+finger prints or exchange keys. You should use a default config, because
+the EC curve that is being used has to be the same on both sides. As well as
+the persona hash algorithm and the salt. Both sides may ommit the `--salt` switch if they
+don't fear that folks with a huge hardware budget are going to precompute databases
+of brainkey personas to break your key. If you are certain that no other users
+are on your box, you may also pass the passphrase as `--brainkey1=mysupersecretnobodyknows`
+on the commandline instead of typing it on `stdin`. The salt may be known to the public,
+its only purpose is to make precomputation infeasable.
+Brainkeys will only be used for deniable EC personas. The Kex (aka Session) keys
+will nevertheless be generated randomly, just as for other personas.
+Brainkey personas can then be used just as normal. Once created, you may just
+forget the brainkey, as you will never need to generate it again.
+
 
 
 Keys
