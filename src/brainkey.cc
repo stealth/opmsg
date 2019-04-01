@@ -56,8 +56,8 @@ static int bk_RAND_bytes(unsigned char *buf, int buflen)
 
 	static unsigned int salt_cnt = 0;
 
-	const string salt = config::brainkey1.substr(0, 4);
-	const string pass = config::brainkey1.substr(4);
+	const string &salt = config::salt1;
+	const string &pass = config::brainkey1;
 
 	memset(buf, 0, buflen);
 

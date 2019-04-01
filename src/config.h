@@ -49,7 +49,7 @@ extern bool nodos2unix;
 
 extern bool ecdh_rsa;
 
-extern std::string brainkey1;
+extern std::string brainkey1, salt1;
 
 }
 

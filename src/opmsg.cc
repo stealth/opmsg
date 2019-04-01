@@ -61,6 +61,7 @@ enum {
 	DENIABLE		= 7,
 	FREEHUGS		= 8,
 	BRAINKEY1		= 9,
+	SALT1			= 10,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -107,8 +108,8 @@ void usage(const char *p)
 	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1]"<<endl
-	    <<"\t[--calgo name] [--phash name [--name name] [--in infile] [--out outfile]"<<endl
-	    <<"\t[--link target id] [--deniable] [--burn]"<<endl<<endl
+	    <<"\t[--salt1 salt] [--calgo name] [--phash name [--name name] [--in infile]"<<endl
+	    <<"\t[--out outfile] [--link target id] [--deniable] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
 	    <<"\t--encrypt,\t-E\trecipients persona hex id (-i to -o, needs -P)"<<endl
@@ -129,6 +130,7 @@ void usage(const char *p)
 	    <<"\t\t\t\ttarget id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
 	    <<"\t--brainkey1\t\tuse secret to derive deniable persona keys"<<endl
+	    <<"\t--salt1\t\t\toptional: use salt when when using brainkeys"<<endl
 	    <<"\t--calgo,\t-C\tuse this algo for encryption"<<endl
 	    <<"\t--phash,\t-p\tuse this hash algo for hashing personas"<<endl
 	    <<"\t--in,\t\t-i\tinput file (stdin)"<<endl
@@ -936,6 +938,7 @@ int main(int argc, char **argv)
 	        {"in", required_argument, nullptr, 'i'},
 	        {"out", required_argument, nullptr, 'o'},
 		{"brainkey1", optional_argument, nullptr, BRAINKEY1},
+		{"salt1", required_argument, nullptr, SALT1},
 	        {"freehugs", no_argument, nullptr, FREEHUGS},
 	        {nullptr, 0, nullptr, 0}};
 
@@ -1123,6 +1126,9 @@ int main(int argc, char **argv)
 					*nl = 0;
 				config::brainkey1 = bkbuf;
 			}
+			break;
+		case SALT1:
+			config::salt1 = optarg;
 			break;
 		case FREEHUGS:
 			cmode = CMODE_FREEHUGS;

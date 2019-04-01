@@ -74,6 +74,8 @@ std::string cfgbase = ".opmsg";
 
 std::string brainkey1 = "";
 
+std::string salt1 = "salt1";
+
 }
 
 using namespace std;
