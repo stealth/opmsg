@@ -110,6 +110,11 @@ public:
 	{
 		d_peer_id = s;
 	}
+
+	std::string get_pub_pem()
+	{
+		return d_pub_pem;
+	}
 };
 
 
