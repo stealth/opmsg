@@ -106,7 +106,9 @@ Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
 
 If you want to use additional features, such as from `opmux` (opmsg/gpg auto forward) or `opcoin`
 (using bitcoin network as a web-of-trust), also type `make contrib`. Contrib tools are
-documented in README2.md.
+documented in README2.md. You may also want to check
+[opmsg-qr](https://github.com/stealth/opmsg-qr) later on, to im/export `opmsg`
+personas via QR codes, once you have set up your working environment.
 
 Personas
 --------
