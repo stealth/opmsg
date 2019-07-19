@@ -254,7 +254,7 @@ Deniable personas
 There may be valid scenarios where you dont want your communication peer to have a way to proof
 that you wrote a certain message. Since op messages are always signed with your persona
 key, peer could proof that you were expressing illegal thoughts. So you want deniable messages
-that are sill integrity protected. The OTR protocol is handling this by sharing the public as
+that are still integrity protected. The OTR protocol is handling this by sharing the public as
 well as the private key for a dedicated communication session between both peers.
 
 _opmsg_ allows to do the same. It requires an additional communication step with a peer
