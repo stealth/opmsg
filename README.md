@@ -36,6 +36,7 @@ _opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto li
 Building against BoringSSL is not recommended due to missing blowfish and ripemd algorithms.
 
 You can use various transports with _opmsg_ such as Mail or [drops](https://github.com/stealth/drops).
+Keys can be exchanged via mail, brainkeys or [QR codes](https://github.com/stealth/opmsg-qr).
 
 Build
 -----
