@@ -35,12 +35,6 @@ extern "C" {
 
 namespace opmsg {
 
-namespace marker {
-
-extern std::string rsa_kex_id;
-
-}
-
 
 enum {
 	OPMSG_RSA_ENCRYPTED_KEYLEN	= 64,

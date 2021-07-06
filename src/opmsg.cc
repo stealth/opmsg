@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2019 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *               sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -79,7 +79,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.79 (C) 2019 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.80 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -927,7 +927,7 @@ int main(int argc, char **argv)
 	        {"long", no_argument, nullptr, ID_FORMAT_LONG},
 	        {"split", no_argument, nullptr, ID_FORMAT_SPLIT},
 	        {"newp", no_argument, nullptr, 'N'},
-		{"newecp", no_argument, nullptr, NEWECP},
+		{"newecp", optional_argument, nullptr, NEWECP},
 		{"newdhp", no_argument, nullptr, NEWDHP},
 		{"deniable", no_argument, nullptr, DENIABLE},
 	        {"calgo", required_argument, nullptr, 'C'},
@@ -1089,6 +1089,24 @@ int main(int argc, char **argv)
 			break;
 		case NEWECP:
 			cmode |= CMODE_NEWECP;
+
+			// the curve name may be overriden to config file,
+			// in order to have config-independent one-liners for
+			// brainkey personas
+			if (optarg) {
+				int nid = curve2nid(optarg);
+				if (nid == -1) {
+					estr<<prefix<<"Invalid curve name. Valid algorithms are:\n\n";
+					print_calgos(estr);
+					estr<<"\n"<<prefix<<"FAILED.\n";
+					eflush();
+					return -1;
+				}
+				config::curve_nids.clear();
+				config::curves.clear();
+				config::curve_nids.push_back(nid);
+				config::curves.push_back(optarg);
+			}
 			break;
 		case ID_FORMAT_LONG:
 			config::idformat = "long";

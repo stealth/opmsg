@@ -46,6 +46,8 @@ void print_halgos(std::ostringstream &);
 
 const EVP_CIPHER *algo2cipher(const std::string &);
 
+int curve2nid(const std::string &);
+
 const EVP_MD *algo2md(const std::string &);
 
 std::string build_error(const std::string &msg);

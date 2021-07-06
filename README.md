@@ -46,12 +46,12 @@ not using the SSL/TLS proto, just the ciphering and hash algorithms.
 For standard _Linux_ distros, just type `make`.
 
 The compilation requires a C++ compiler that supports `-std=c++11`.
-This can be configured with e.g. `make CXX=eg++ LD=eg++` on _OpenBSD_.
+This can be configured with e.g. `make CXX=eg++` on _OpenBSD_.
 
 This project supports both `BN_GENCB_new` and `BN_GENCB` for big number
 generation. To disable `BN_GENCB_new`, set `HAVE_BN_GENCB_NEW` to false:
 `make DEFS=-DHAVE_BN_GENCB_NEW=0`. So on _OpenBSD_, you would run
-`make CXX=eg++ LD=eg++ DEFS=-DHAVE_BN_GENCB_NEW=0`. On _OSX_ you should install
+`make CXX=eg++ DEFS=-DHAVE_BN_GENCB_NEW=0`. On _OSX_ you should install
 your own _OpenSSL_, as Apple marks _OpenSSL_ as deprecated in favor of their own
 crypto libs. You may also set all these options in the `Makefile`.
 
@@ -290,12 +290,14 @@ Brainkey Personas
 
 Brainkey personas are deniable personas whose key was not generated via RNG
 input, but which are derived from a passphrase. They are very similar to the
-concept of BTC brainwallets:
+concept of BTC brainwallets. When generating brainkey personas, the commandline
+should be as explicit as possible in order to have matching personas on both sides
+despite potentially different config-file settings for EC curves or hash algos:
 
 ```
-$ opmsg --name nobrainer --deniable --salt1 1234 --brainkey1 --newecp
+$ opmsg --name=nobrainer --deniable --salt1 1234 --brainkey1 --newecp=secp521r1 --phash=sha256
 
-opmsg: version=1.79 (C) 2019 Sebastian Krahmer: https://github.com/stealth/opmsg
+opmsg: version=1.80 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg
 
 opmsg: Enter the brainkey, 16 chars minimum (echoed): mysupersecretnobodyknows
 opmsg: creating new EC persona (curve secp521r1)
@@ -316,14 +318,11 @@ Ofcorse, you should use a secret that nobody can guess or bruteforce, including
 upper and lower-case, digits and so on. The idea behind brainkey personas is,
 that you share a secret with your peer once you meet, and both sides can
 then generate the same personas independently afterwards. There's no need to verify
-finger prints or exchange keys. You should use a default config, because
-the EC curve that is being used has to be the same on both sides. As well as
-the persona hash algorithm and the salt. Both sides may ommit the `--salt` switch if they
-don't fear that folks with a huge hardware budget are going to precompute databases
-of brainkey personas to break your key. If you are certain that no other users
+finger prints or exchange keys. The salt parameter doesn't need to be secret and may
+also be omitted. But it is a safety measure to chose a salt in order to make attacks
+with rainbow tables unfeasable. If you are certain that no other users
 are on your box, you may also pass the passphrase as `--brainkey1=mysupersecretnobodyknows`
-on the commandline instead of typing it on `stdin`. The salt may be known to the public,
-its only purpose is to make precomputation infeasable.
+on the commandline instead of typing it on `stdin`.
 Brainkeys will only be used for deniable EC personas. The Kex (aka Session) keys
 will nevertheless be generated randomly, just as for other personas.
 Brainkey personas can then be used just as normal. Once created, you may just

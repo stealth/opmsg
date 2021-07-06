@@ -59,7 +59,7 @@ INC=
 
 CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
 
-LD=c++
+LD=$(CXX)
 LDFLAGS=
 LIBS+=-lcrypto
 

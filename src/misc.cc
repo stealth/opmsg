@@ -203,6 +203,28 @@ bool is_valid_halgo(const string &s)
 }
 
 
+int curve2nid(const string &name)
+{
+	map<string, int> ec{
+	        {"secp384r1", NID_secp384r1}, {"secp521r1", NID_secp521r1},
+	        {"secp256k1", NID_secp256k1},	// BTC curve
+	        {"sect283k1", NID_sect283k1}, {"sect283r1", NID_sect283r1},
+	        {"sect409k1", NID_sect409k1}, {"sect409r1", NID_sect409r1},
+	        {"sect571k1", NID_sect571k1}, {"sect571r1", NID_sect571r1},
+#ifdef NID_brainpoolP512t1
+	        {"brainpoolP320r1", NID_brainpoolP320r1}, {"brainpoolP384r1", NID_brainpoolP384r1}, {"brainpoolP512r1", NID_brainpoolP512r1},
+	        {"brainpoolP320t1", NID_brainpoolP320t1}, {"brainpoolP384t1", NID_brainpoolP384t1}, {"brainpoolP512t1", NID_brainpoolP512t1}
+#endif
+	};
+
+	auto it = ec.find(name);
+	if (it == ec.end())
+		return -1;
+
+	return it->second;
+}
+
+
 void rlockf(int fd)
 {
 	struct flock fl;
