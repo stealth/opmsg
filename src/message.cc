@@ -832,24 +832,31 @@ int message::decrypt(string &raw)
 				if (DH_check_pub_key(dh.get(), bn.get(), &ecode) != 1)
 					return build_error("decrypt: DH_check_pub_key failed.", -1);
 				opmsg::DH_set0_key(dh.get(), bn.release(), nullptr);
-				EVP_PKEY_assign_DH(peer_key.get(), dh.release());
+				if (EVP_PKEY_assign_DH(peer_key.get(), dh.release()) != 1)
+					return build_error("decrypt::EVP_PKEY_assign_DH:", -1);
 			// ...and a compressed EC_POINT pubkey in ECDH case
 			} else {
 				unique_ptr<EC_KEY, EC_KEY_del> my_ec(EVP_PKEY_get1_EC_KEY(ec_dh[i]->d_priv), EC_KEY_free);
 				if (!my_ec.get())
 					return build_error("decrypt::EVP_PKEY_get1_EC_KEY:", -1);
-				unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(EC_KEY_get0_group(my_ec.get()), bn.get(), nullptr, nullptr), EC_POINT_free);
+				const EC_GROUP *ecg0 = EC_KEY_get0_group(my_ec.get());
+				if (ecg0 == nullptr)
+					return build_error("decrypt::EC_KEY_get0_group:", -1);
+				unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(ecg0, bn.get(), nullptr, nullptr), EC_POINT_free);
 				if (!ecp.get())
 					return build_error("decrypt::EC_POINT_bn2point:", -1);
-				unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_dup(my_ec.get()), EC_KEY_free);
+				int nid = EC_GROUP_get_curve_name(ecg0);
+				if (nid == 0)
+					return build_error("decrypt::EC_GROUP_get_curve_name: No NID associated with curve.", -1);
+				unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_new_by_curve_name(nid), EC_KEY_free);
 				if (!peer_ec.get())
-					return build_error("decrypt: OOM", -1);
-				EC_KEY_set_private_key(peer_ec.get(), nullptr);
+					return build_error("decrypt::EC_KEY_new_by_curve_name:", -1);
 				if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
 					return build_error("decrypt::EC_KEY_set_public_key:", -1);
 				if (EC_KEY_check_key(peer_ec.get()) != 1)
 					return build_error("decrypt::EC_KEY_check_key:", -1);
-				EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release());
+				if (EVP_PKEY_assign_EC_KEY(peer_key.get(), peer_ec.release()) != 1)
+					return build_error("decrypt::EVP_PKEY_assign_EC_KEY:", -1);
 			}
 
 			unique_ptr<EVP_PKEY_CTX, EVP_PKEY_CTX_del> ctx(EVP_PKEY_CTX_new(ec_dh[i]->d_priv, nullptr), EVP_PKEY_CTX_free);
