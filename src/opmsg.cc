@@ -79,7 +79,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.81 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.82 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.

@@ -845,12 +845,16 @@ int message::decrypt(string &raw)
 				unique_ptr<EC_POINT, EC_POINT_del> ecp(EC_POINT_bn2point(ecg0, bn.get(), nullptr, nullptr), EC_POINT_free);
 				if (!ecp.get())
 					return build_error("decrypt::EC_POINT_bn2point:", -1);
-				int nid = EC_GROUP_get_curve_name(ecg0);
-				if (nid == 0)
-					return build_error("decrypt::EC_GROUP_get_curve_name: No NID associated with curve.", -1);
-				unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_new_by_curve_name(nid), EC_KEY_free);
+
+				// construct a EC key that solely consists of a public key and no priv key.
+				// Thats a bit tricky as stupid OpenSSL changes ABI back and forth and doesn't allow
+				// to set priv_key to NULL via EC_KEY_set_private_key() anymore. If you are interested in OSSL
+				// ABI breakage, check "man EC_GROUP_get_curve_name" about the OPENSSL_EC_EXPLICIT_CURVE note.
+				unique_ptr<EC_KEY, EC_KEY_del> peer_ec(EC_KEY_new(), EC_KEY_free);
 				if (!peer_ec.get())
-					return build_error("decrypt::EC_KEY_new_by_curve_name:", -1);
+					return build_error("decrypt::EC_KEY_new:", -1);
+				if (EC_KEY_set_group(peer_ec.get(), ecg0) != 1)
+					return build_error("decrypt::EC_KEY_set_group:", -1);
 				if (EC_KEY_set_public_key(peer_ec.get(), ecp.get()) != 1)
 					return build_error("decrypt::EC_KEY_set_public_key:", -1);
 				if (EC_KEY_check_key(peer_ec.get()) != 1)
