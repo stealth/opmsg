@@ -110,7 +110,7 @@ void usage(const char *p)
 	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
 	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1/2]"<<endl
-	    <<"\t[--salt1/2 salt] [--calgo name] [--phash name [--name name] [--in infile]"<<endl
+	    <<"\t[--salt1/2 slt] [--calgo name] [--phash name [--name name] [--in infile]"<<endl
 	    <<"\t[--out outfile] [--link target id] [--deniable] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
