@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2021 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -36,9 +36,11 @@ std::string &blob2hex(const std::string &, std::string &);
 
 bool is_hex_hash(const std::string &);
 
-bool is_valid_halgo(const std::string &);
+bool is_valid_halgo(const std::string &, bool);
 
-bool is_valid_calgo(const std::string &);
+bool is_valid_calgo(const std::string &, bool);
+
+bool is_valid_pq_calgo(const std::string &);
 
 void print_calgos(std::ostringstream &);
 

@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2021 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -161,7 +161,7 @@ typedef enum : uint32_t {
 
 class persona {
 
-	std::string d_id{""}, d_name{""}, d_link_src{""}, d_ptype{""};
+	std::string d_id{""}, d_name{""}, d_link_src{""}, d_ptype{""}, d_pqsalt{""};
 
 	// The (EC)DH 'session' keys this persona holds
 	std::map<std::string, std::vector<PKEYbox *>> d_keys;
@@ -230,6 +230,12 @@ public:
 
 	int check_type();
 
+	// is a Post Quantum1 persona?
+	bool is_pq1()
+	{
+		return d_pqsalt.size() > 0;
+	}
+
 	bool can_verify()
 	{
 		return can_encrypt();
@@ -269,6 +275,11 @@ public:
 		return d_id;
 	}
 
+	std::string get_pqsalt1()
+	{
+		return d_pqsalt;
+	}
+
 	std::string get_name()
 	{
 		return d_name;
@@ -294,6 +305,8 @@ public:
 	std::vector<PKEYbox *> gen_kex_key(const EVP_MD *md, const std::string & = "");
 
 	std::vector<PKEYbox *> find_dh_key(const std::string &hex);
+
+	int make_pq1(const std::string &, const std::string &, const std::string &);
 
 	int del_dh_id(const std::string &hex);
 

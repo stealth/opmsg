@@ -46,12 +46,12 @@ int native_crypt = 0;
 // when creating or importing personas, do it deniable
 int deniable = 0;
 
-unsigned int version = 2;
+unsigned int version = 4;
 unsigned int peer_isolation = 0;
 
 std::string rsa_e = "65537";
 
-std::string calgo = "aes128gcm";
+std::string calgo = "aes256gcm";
 std::string phash = "sha256";
 std::string shash = "sha256";
 std::string khash = "sha256";
@@ -72,9 +72,14 @@ bool ecdh_rsa = 0;
 
 std::string cfgbase = ".opmsg";
 
-std::string brainkey1 = "";
+// brainkey1 or brainkey2
+std::string brainkey12 = "";
 
 std::string salt1 = "salt1";
+
+std::string salt2 = "salt2";
+
+std::string pq_type = "";
 
 }
 
@@ -148,6 +153,8 @@ int parse_config(const string &cfgbase)
 			config::version = 2;
 		else if (sline == "version=3")
 			config::version = 3;
+		else if (sline == "version=4")
+			config::version = 4;
 		else if (sline == "ecdh-rsa")
 			config::ecdh_rsa = 1;
 		else if (sline == "curve=secp521r1") {

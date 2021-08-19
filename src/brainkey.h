@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2019 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify

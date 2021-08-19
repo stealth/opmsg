@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2021 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -31,6 +31,13 @@ extern "C" {
 #include <openssl/bn.h>
 }
 
+#ifndef EVP_CTRL_AEAD_SET_TAG
+#define EVP_CTRL_AEAD_SET_TAG EVP_CTRL_GCM_SET_TAG
+#endif
+
+#ifndef EVP_CTRL_AEAD_GET_TAG
+#define EVP_CTRL_AEAD_GET_TAG EVP_CTRL_GCM_GET_TAG
+#endif
 
 #if OPENSSL_VERSION_NUMBER > 0x10100000L && !(defined HAVE_LIBRESSL)
 

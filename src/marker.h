@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2021 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -49,7 +49,7 @@ extern std::string opmsg_databegin;
 extern std::string kex_begin;
 extern std::string kex_end;
 
-extern std::string version1, version2, version3;
+extern std::string version1, version2, version3, version4;
 extern std::string src_id;
 extern std::string dst_id;
 extern std::string kex_id;

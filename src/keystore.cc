@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2019 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -44,6 +44,7 @@ extern "C" {
 
 #include "missing.h"
 #include "marker.h"
+#include "base64.h"
 #include "deleters.h"
 #include "keystore.h"
 #include "brainkey.h"
@@ -674,6 +675,49 @@ int persona::load_dh(const string &hex)
 }
 
 
+// "brainkey2" the only type for now
+int persona::make_pq1(const string &type, const string &secret, const string &salt)
+{
+	if (!is_hex_hash(d_id))
+		return build_error("make_pq1: Not a valid persona id", -1);
+
+	if (d_ptype != marker::ec)
+		return build_error("make_pq1: Not a EC persona.", -1);
+
+	string dir = d_cfgbase + "/" + d_id;
+	string pqc = dir + "/pqc";
+
+	struct stat st;
+	if (stat(pqc.c_str(), &st) == 0)
+		return build_error("make_pq1: Persona already has PQC attributes.", -1);
+
+	char saltbuf[256] = {0};
+	unsigned char out[64] = {0};
+
+	snprintf(saltbuf, sizeof(saltbuf) - 1, "PQC-%s-%s", type.c_str(), salt.c_str());
+
+	if (PKCS5_PBKDF2_HMAC(secret.c_str(), secret.size(), reinterpret_cast<unsigned char *>(saltbuf),
+	    strlen(saltbuf), 100000,
+            EVP_sha512(), sizeof(out), out) != 1)
+		return build_error("make_pq1::PKCS5_PBKDF2_HMAC:", -1);
+
+	d_pqsalt = string(reinterpret_cast<char *>(out), sizeof(out));
+
+	string b64_pqsalt = "";
+	b64_encode(d_pqsalt, b64_pqsalt);
+	if (!b64_pqsalt.size())
+		return build_error("make_pq1: Base64 encode returned empty string?!", -1);
+	unique_ptr<FILE, FILE_del> f(fopen(pqc.c_str(), "w"), ffclose);
+	if (!f.get())
+		return build_error("make_pq1::fopen:", -1);
+	fprintf(f.get(), "# DO NOT EDIT\npqtype=%s\npqsalt1=%s\n", type.c_str(), b64_pqsalt.c_str());
+	f.reset();
+
+	errno = 0;
+	return 0;
+}
+
+
 // determine type of a persona
 int persona::check_type()
 {
@@ -701,7 +745,7 @@ int persona::check_type()
 int persona::load(const std::string &dh_hex, uint32_t how)
 {
 	size_t r = 0;
-	char buf[8192], *fr = nullptr;
+	char buf[8192] = {0}, *fr = nullptr;
 	string dir = d_cfgbase + "/" + d_id;
 	string file = dir + "/name";
 	string hex = "";
@@ -721,8 +765,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	// load name, if any
 	unique_ptr<FILE, FILE_del> f(fopen(file.c_str(), "r"), ffclose);
 	if (f.get()) {
-		char s[512];
-		memset(s, 0, sizeof(s));
+		char s[512] = {0};
 		rlockf(f.get());
 		fr = fgets(s, sizeof(s) - 1, f.get());
 		unlockf(f.get());
@@ -738,8 +781,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	file = dir + "/srclink";
 	f.reset(fopen(file.c_str(), "r"));
 	if (f.get()) {
-		char s[512];
-		memset(s, 0, sizeof(s));
+		char s[512] = {0};
 		rlockf(f.get());
 		fr = fgets(s, sizeof(s) - 1, f.get());
 		unlockf(f.get());
@@ -755,9 +797,8 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	file = dir + "/imported";
 	f.reset(fopen(file.c_str(), "r"));
 	if (f.get()) {
-		char s[512];
+		char s[512] = {0};
 		size_t slen = 0;
-		memset(s, 0, sizeof(s));
 		string line = "";
 		rlockf(f.get());
 		while (fgets(s, sizeof(s) - 1, f.get()) != nullptr) {
@@ -772,6 +813,32 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 				if (is_hex_hash(h))
 					d_imported[h] = 1;	// timestamp not needed yet
 			}
+		}
+		unlockf(f.get());
+	}
+
+	// load PQC attributes, if exists
+	file = dir + "/pqc";
+	f.reset(fopen(file.c_str(), "r"));
+	if (f.get()) {
+		char s[1024] = {0};
+		size_t slen = 0;
+		string line = "";
+		rlockf(f.get());
+		while (fgets(s, sizeof(s) - 1, f.get()) != nullptr) {
+			slen = strlen(s);
+			if (slen < 1 || s[0] == '#')
+				continue;
+			line = s;
+			// pqtype=brainkey2
+
+			// the only allowed attribute so far
+			if (line.find("pqsalt1=") != 0)
+				continue;
+			line.erase(remove(line.begin(), line.end(), '\n'), line.end());
+			string b64 = line.substr(8);
+			b64_decode(b64, d_pqsalt);
+			break;
 		}
 		unlockf(f.get());
 	}

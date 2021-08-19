@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2017 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -71,7 +71,7 @@ bool is_hex_hash(const string &s)
 
 const EVP_CIPHER *algo2cipher(const string &s)
 {
-	const EVP_CIPHER *cipher = EVP_aes_256_cbc();
+	const EVP_CIPHER *cipher = EVP_aes_256_gcm();
 
 	if (s == "aes128cbc")
 		cipher = EVP_aes_128_cbc();
@@ -129,7 +129,7 @@ const EVP_MD *algo2md(const string &s)
 void print_halgos(ostringstream &os)
 {
 	map<string, int> m{
-	        {"sha256", 1}, {"sha512", 1}, {"ripemd160", 1}
+	        {"sha256", 1}, {"sha384", 1}, {"sha512", 1}
 	};
 
 	for (auto i = m.begin(); i != m.end(); ++i)
@@ -141,10 +141,8 @@ void print_calgos(ostringstream &os)
 {
 	extern const string prefix;
 	map<string, int> m{
-	        {"bfcfb", 0}, {"bfcbc", 0},
-	        {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 0}, {"aes256ctr", 0},
-	        {"aes128cfb", 0}, {"aes128cbc", 0}, {"aes128gcm", 1}, {"aes128ctr", 0},
-	        {"cast5cfb", 0}, {"cast5cbc", 0},
+	        {"aes256cfb", 0}, {"aes256cbc", 0}, {"aes256gcm", 1}, {"aes256ctr", 0},
+	        {"aes128cfb", 0}, {"aes128cbc", 0}, {"aes128gcm", 0}, {"aes128ctr", 0},
 #ifdef CHACHA20
 		{"chacha20-poly1305", 0},
 #endif
@@ -176,27 +174,49 @@ void print_calgos(ostringstream &os)
 }
 
 
-bool is_valid_calgo(const string &s)
+bool is_valid_calgo(const string &s, bool encrypt)
 {
 	map<string, int> m{
-	        {"bfcfb", 1}, {"bfcbc", 1},
+	        {"bfcfb", 0}, {"bfcbc", 0},	// no longer valid for encryption
+	        {"cast5cfb", 0}, {"cast5cbc", 0},
+
 	        {"aes256cfb", 1}, {"aes256cbc", 1}, {"aes256gcm", 1}, {"aes256ctr", 1},
 	        {"aes128cfb", 1}, {"aes128cbc", 1}, {"aes128gcm", 1}, {"aes128ctr", 1},
-	        {"cast5cfb", 1}, {"cast5cbc", 1},
 #ifdef CHACHA20
 		{"chacha20-poly1305", 1},
 #endif
 	        {"null", 1}
 	};
 
-	return m.count(s) > 0;
+	bool r = m.count(s) > 0;
+	if (r && encrypt)
+		r = m[s];
+
+	return r;
 }
 
 
-bool is_valid_halgo(const string &s)
+bool is_valid_halgo(const string &s, bool encrypt)
 {
 	map<string, int> m{
-	        {"sha256", 1}, {"sha384", 1}, {"sha512", 1}, {"ripemd160", 1}
+	        {"sha256", 1}, {"sha384", 1}, {"sha512", 1}, {"ripemd160", 0}
+	};
+
+	bool r = m.count(s) > 0;
+	if (r && encrypt)
+		r = m[s];
+
+	return r;
+}
+
+
+bool is_valid_pq_calgo(const string &s)
+{
+	map<string, int> m{
+	        {"aes256gcm", 1}
+#ifdef CHACHA20
+		, {"chacha20-poly1305", 1}
+#endif
 	};
 
 	return m.count(s) > 0;

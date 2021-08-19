@@ -35,9 +35,6 @@ INC=
 # BoringSSL. Be warned, BoringSSL creates incompatible
 # PEM files. So this is not recommended and just for
 # testing.
-#BSSL=/opt/boringssl
-#INC+=-I$(BSSL)/include
-#LIBS+=-L$(BSSL)/build/crypto -Wl,--rpath=$(BSSL)/build/crypto
 #DEFS+=-DHAVE_BN_GENCB_NEW=0
 #DEFS+=-DHAVE_BORINGSSL
 

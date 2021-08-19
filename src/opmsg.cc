@@ -62,6 +62,8 @@ enum {
 	FREEHUGS		= 8,
 	BRAINKEY1		= 9,
 	SALT1			= 10,
+	BRAINKEY2		= 11,
+	SALT2			= 12,
 
 	CMODE_INVALID		= 0,
 	CMODE_ENCRYPT		= 0x100,
@@ -79,7 +81,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.82 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.83 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -107,8 +109,8 @@ void usage(const char *p)
 {
 	ostr<<"\nUsage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]"<<endl
 	    <<"\t[--verify file] <--persona ID> [--import] [--list] [--listpgp]"<<endl
-	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1]"<<endl
-	    <<"\t[--salt1 salt] [--calgo name] [--phash name [--name name] [--in infile]"<<endl
+	    <<"\t[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1/2]"<<endl
+	    <<"\t[--salt1/2 salt] [--calgo name] [--phash name [--name name] [--in infile]"<<endl
 	    <<"\t[--out outfile] [--link target id] [--deniable] [--burn]"<<endl<<endl
             <<"\t--confdir,\t-c\t(must come first) defaults to ~/.opmsg"<<endl
 	    <<"\t--native,\t-R\tEC/RSA override (dont use existing (EC)DH keys)"<<endl
@@ -129,8 +131,8 @@ void usage(const char *p)
 	    <<"\t--link\t\t\tlink (your) --persona as default src to this"<<endl
 	    <<"\t\t\t\ttarget id"<<endl
 	    <<"\t--newdhp\t\tcreate new DHparams for persona (rarely needed)"<<endl
-	    <<"\t--brainkey1\t\tuse secret to derive deniable persona keys"<<endl
-	    <<"\t--salt1\t\t\toptional: use salt when when using brainkeys"<<endl
+	    <<"\t--brainkey1/2\t\tuse secret to derive deniable persona keys"<<endl
+	    <<"\t--salt1/2\t\toptional: use salt when when using brainkeys"<<endl
 	    <<"\t--calgo,\t-C\tuse this algo for encryption"<<endl
 	    <<"\t--phash,\t-p\tuse this hash algo for hashing personas"<<endl
 	    <<"\t--in,\t\t-i\tinput file (stdin)"<<endl
@@ -240,7 +242,7 @@ int file2hexhash(const string &path, string &hexhash)
 		return -1;
 
 	unsigned int hlen = 0;
-	unsigned char digest[EVP_MAX_MD_SIZE];	// 64 which matches sha512
+	unsigned char digest[EVP_MAX_MD_SIZE] = {0};	// 64 which matches sha512
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return -1;
@@ -336,6 +338,17 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 	if (!(dst_p = ks->find_persona(dst_id))) {
 		estr<<prefix<<"ERROR: "<<ks->why()<<endl; eflush();
 		return -1;
+	}
+
+	if (dst_p->is_pq1()) {
+		if (config::version < 4) {
+			estr<<prefix<<"ERROR: PQC personas need at least version 4 configured.\n"; eflush();
+			return -1;
+		}
+		if (!is_valid_pq_calgo(config::calgo)) {
+			estr<<prefix<<"ERROR: '"<<config::calgo<<"' is not a valid PQC algo.\n"; eflush();
+			return -1;
+		}
 	}
 
 	// any default src linked to this target? override!
@@ -588,6 +601,12 @@ int do_verify(const string &verify_file)
 
 int do_newpersona(const string &name, const string &type, bool sign)
 {
+
+	if (!is_valid_halgo(config::phash, 1)) {
+		estr<<prefix<<"ERROR: not a valid persona hash algorithm.\n"; eflush();
+		return -1;
+	}
+
 	keystore ks(config::phash, config::cfgbase);
 
 	string pub = "", priv = "";
@@ -614,9 +633,17 @@ int do_newpersona(const string &name, const string &type, bool sign)
 	if (config::deniable) {
 		if (p->link(p->get_id()) < 0)
 			estr<<prefix<<"ERROR: Failed to link deniable persona to itself: "<<ks.why()<<endl;
-		estr<<prefix<<"You created a deniable persona.\n";
 
-		if (config::brainkey1.size() > 0) {
+		if (config::pq_type.size() > 0) {
+			if (p->make_pq1(config::pq_type, config::brainkey12, config::salt2) < 0) {
+				estr<<prefix<<"ERROR: Failed to make persona PQ-safe: "<<ks.why()<<endl; eflush();
+				return -1;
+			}
+			estr<<prefix<<"You created a deniable PQC persona.\n";
+		} else
+			estr<<prefix<<"You created a deniable persona.\n";
+
+		if (config::brainkey12.size() > 0) {
 			estr<<prefix<<"Your persona key was derived from a brainkey. No need to exchange keys\n"
 			    <<prefix<<"with your peer. Your peer just needs to execute the same command as you\n"
 			    <<prefix<<"in order to create the same deniable persona on their side.\n\n";
@@ -720,9 +747,10 @@ int do_newdhparams()
 
 int do_list(const string &name)
 {
-	// for conveniance, treat hash sums the way they are, even
+	// for convenience, treat hash sums the way they are, even
 	// if passed as --name for searching
-	string search = "";
+	string search = "", type = "";
+
 	if (name.size() >= 16 && is_hex_hash(name))
 		search = name;
 
@@ -736,7 +764,10 @@ int do_list(const string &name)
 	eflush();
 	for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
 		if (search.size() > 0 || name.size() == 0 || i->second->get_name().find(name) != string::npos) {
-			ostr<<prefix<<idformat(i->second->get_id())<<" "<<i->second->get_type()<<"\t";
+			type = i->second->get_type();
+			if (i->second->is_pq1())
+				type = "pq1";
+			ostr<<prefix<<idformat(i->second->get_id())<<" "<<type<<"\t";
 			ostr<<i->second->can_sign()<<" "<<i->second->size()<<"\t"<<i->second->get_name()<<endl;
 		}
 	}
@@ -784,6 +815,11 @@ static int split_deniable_keys(string &pub, string &priv)
 
 int do_import(const string &name)
 {
+	if (!is_valid_halgo(config::phash, 1)) {
+		estr<<prefix<<"ERROR: Invalid persona hash algorithm.\n"; eflush();
+		return -1;
+	}
+
 	if (config::infile == "/dev/stdin") {
 		estr<<prefix<<"Paste the EC/RSA pubkey here. End with <Return> followed by <Ctrl-C>\n\n";
 		eflush();
@@ -893,17 +929,22 @@ void sig_int(int x)
 int check_valid_options(int cmode)
 {
 	// never ever use brainkeys for non-deniable personas or any other
-	// mode than EC persona generation
-	if (config::brainkey1.size() > 0) {
+
+	if (config::brainkey12.size() > 0) {
+		if (config::pq_type.size() > 0 && config::version < 4) {
+			estr<<prefix<<"ERROR: PQC needs a version configured >= 4!\n"; eflush();
+			return -1;
+		}
 		if (!config::deniable || cmode != CMODE_NEWECP) {
 			estr<<prefix<<"ERROR: Invalid combination of options!\n"; eflush();
 			return -1;
 		}
-		if (config::brainkey1.size() < 16) {
+		if (config::brainkey12.size() < 16) {
 			estr<<prefix<<"ERROR: brainkey size must be 16bytes minimum!\n"; eflush();
 			return -1;
 		}
 	}
+
 	return 0;
 }
 
@@ -939,6 +980,8 @@ int main(int argc, char **argv)
 	        {"out", required_argument, nullptr, 'o'},
 		{"brainkey1", optional_argument, nullptr, BRAINKEY1},
 		{"salt1", required_argument, nullptr, SALT1},
+		{"brainkey2", optional_argument, nullptr, BRAINKEY2},
+		{"salt2", required_argument, nullptr, SALT2},
 	        {"freehugs", no_argument, nullptr, FREEHUGS},
 	        {nullptr, 0, nullptr, 0}};
 
@@ -1128,8 +1171,9 @@ int main(int argc, char **argv)
 			config::deniable = 1;
 			break;
 		case BRAINKEY1:
+		case BRAINKEY2:
 			if (optarg)
-				config::brainkey1 = optarg;
+				config::brainkey12 = optarg;
 			else {
 				estr<<prefix<<"Enter the brainkey, 16 chars minimum (echoed): ";
 				eflush();
@@ -1142,11 +1186,17 @@ int main(int argc, char **argv)
 					*nl = 0;
 				if ((nl = strchr(bkbuf, '\n')))
 					*nl = 0;
-				config::brainkey1 = bkbuf;
+				config::brainkey12 = bkbuf;
 			}
+
+			if (c == BRAINKEY2)
+				config::pq_type = "brainkey2";
 			break;
 		case SALT1:
 			config::salt1 = optarg;
+			break;
+		case SALT2:
+			config::salt2 = optarg;
 			break;
 		case FREEHUGS:
 			cmode = CMODE_FREEHUGS;
@@ -1164,7 +1214,7 @@ int main(int argc, char **argv)
 	if (check_valid_options(cmode) < 0)
 		return -1;
 
-	if (!is_valid_halgo(config::phash)) {
+	if (!is_valid_halgo(config::phash, 1)) {
 		estr<<prefix<<"Invalid persona hashing algorithm. Valid hash algorithms are:\n\n";
 		print_halgos(estr);
 		estr<<"\n"<<prefix<<"FAILED.\n";
@@ -1172,7 +1222,7 @@ int main(int argc, char **argv)
 		return -1;
 	}
 
-	if (!is_valid_calgo(config::calgo)) {
+	if (!is_valid_calgo(config::calgo, 1)) {
 		estr<<prefix<<"Invalid crypto algorithm. Valid crypto algorithms are:\n\n";
 		print_calgos(estr);
 		estr<<"\n"<<prefix<<"FAILED.\n";

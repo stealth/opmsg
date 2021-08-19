@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2019 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -46,7 +46,7 @@ using namespace std;
 
 static int bk_RAND_bytes(unsigned char *buf, int buflen)
 {
-	if (config::brainkey1.size() < 16)
+	if (config::brainkey12.size() < 16)
 		return 0;
 
 	const char *init_salt = "opmsg-brainkey-v1";
@@ -57,7 +57,7 @@ static int bk_RAND_bytes(unsigned char *buf, int buflen)
 	static unsigned int salt_cnt = 0;
 
 	const string &salt = config::salt1;
-	const string &pass = config::brainkey1;
+	const string &pass = config::brainkey12;
 
 	memset(buf, 0, buflen);
 
@@ -154,7 +154,7 @@ static int bk_bnrand_range(BIGNUM *r, const BIGNUM *range)
 
 int EC_KEY_generate_key(EC_KEY *eckey)
 {
-	if (config::brainkey1.size() < 16)
+	if (config::brainkey12.size() < 16)
 		return ::EC_KEY_generate_key(eckey);
 
 	const EC_GROUP *ec_grp = EC_KEY_get0_group(eckey);	// not unique

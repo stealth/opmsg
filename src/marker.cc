@@ -1,8 +1,8 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015 by Sebastian Krahmer,
- *             sebastian [dot] krahmer [at] gmail [dot] com
+ * (C) 2015-2021 by Sebastian Krahmer,
+ *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -51,6 +51,7 @@ string kex_end = "-----END KEX-----\n";
 string version1 = "version=1\n";
 string version2 = "version=2\n";
 string version3 = "version=3\n";
+string version4 = "version=4\n";
 
 string src_id = "src-id=";
 string dst_id = "dst-id=";

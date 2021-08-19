@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2016 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *                  sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -28,6 +28,7 @@
 #include "misc.h"
 #include "base64.h"
 #include "keystore.h"
+#include "missing.h"
 #include "message.h"
 #include "deleters.h"
 #include "marker.h"
@@ -51,15 +52,17 @@ using namespace std;
 static string::size_type lwidth = 80, max_sane_string = 0x1000, min_entropy_bytes = 16;
 
 
-//                                                                                                                                          64
-static int kdf_v123(unsigned int vers, unsigned char *secret, int slen, const string &s1, const string &s2, unsigned char key[OPMSG_MAX_KEY_LENGTH])
+static int kdf_v1234(unsigned int vers, const unsigned char *secret, int slen,
+                     const string &s1, const string &s2, const string &pqsalt1,
+                     unsigned char key[OPMSG_MAX_KEY_LENGTH])	// 64 byte
 {
 	unsigned int hlen = 0;
-	unsigned char digest[EVP_MAX_MD_SIZE];	// 64 which matches sha512
+	unsigned char digest[EVP_MAX_MD_SIZE] = {0xff};	// 64 which matches sha512
 
-	if (slen <= 0 || vers < 1 || vers > 3)
+	errno = 0;
+
+	if (slen <= 0 || vers < 1 || vers > 4)
 		return -1;
-	memset(key, 0xff, OPMSG_MAX_KEY_LENGTH);
 
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
@@ -80,6 +83,9 @@ static int kdf_v123(unsigned int vers, unsigned char *secret, int slen, const st
 	case 3:
 		vs = marker::version3;
 		break;
+	case 4:
+		vs = marker::version4;
+		break;
 	default:
 		return -1;
 	}
@@ -94,7 +100,21 @@ static int kdf_v123(unsigned int vers, unsigned char *secret, int slen, const st
 			return -1;
 	}
 
+	// Add PQC salt if given
+	if (vers >= 4 && pqsalt1.size() > 0) {
+		for (uint32_t i = 0; i < 64; ++i) {
+			if (EVP_DigestUpdate(md_ctx.get(), pqsalt1.c_str(), pqsalt1.size()) != 1)
+				return -1;
+			char stri[16] = {0};
+			snprintf(stri, sizeof(stri), "%015x", i);
+			if (EVP_DigestUpdate(md_ctx.get(), stri, sizeof(stri)) != 1)
+				return -1;
+		}
+	}
+
 	if (EVP_DigestFinal_ex(md_ctx.get(), digest, &hlen) != 1)
+		return -1;
+	if (hlen != 64)
 		return -1;
 
 	if (hlen > OPMSG_MAX_KEY_LENGTH)
@@ -106,7 +126,32 @@ static int kdf_v123(unsigned int vers, unsigned char *secret, int slen, const st
 
 static int kdf_v1(unsigned char *secret, int slen, unsigned char key[OPMSG_MAX_KEY_LENGTH])
 {
-	return kdf_v123(1, secret, slen, "", "", key);
+	return kdf_v1234(1, secret, slen, "", "", "", key);
+}
+
+
+// Different opmsg versions use different AEAD
+static vector<unsigned char> derive_aead(int version, const string &src_id_hex, const string &base_data)
+{
+	vector<unsigned char> aead(0);
+
+	// version 1-3 just use the src-id
+	if (version < 4) {
+		aead.insert(aead.end(), src_id_hex.begin(), src_id_hex.end());
+	} else {
+
+		// later versions use entire constructed header, including session pub-keys
+		// in order to "sign" the entire opmsg a 2nd time (the data part is also integrity protected
+		// by AEAD algos) to combat Shors algo in a post-quantum world. We use our KDF function
+		// for it by passing apropriate parameters. The "secret" is the base_data.
+
+		aead.resize(OPMSG_MAX_KEY_LENGTH);
+		if (kdf_v1234(version, reinterpret_cast<const unsigned char*>(base_data.c_str()), base_data.size(), "AEAD", "SHA512", "", &aead[0]) < 0)
+			aead.clear();
+	}
+
+	// returns 0-sized vector if kdf fails
+	return aead;
 }
 
 
@@ -119,6 +164,9 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 
 	if (!src_persona->can_sign())
 		return build_error("sign:: Persona has no pkey.", -1);
+
+	if (!is_valid_halgo(shash, 1))
+		return build_error("sign:: Not a valid hash algo for signing.", -1);
 
 	// do not take ownership
 	EVP_PKEY *evp = src_persona->get_pkey()->d_priv;
@@ -161,8 +209,8 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 
 int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 {
-	unsigned char iv[OPMSG_MAX_IV_LENGTH], iv_kdf[OPMSG_MAX_KEY_LENGTH];
-	char aad_tag[16];
+	unsigned char iv[OPMSG_MAX_IV_LENGTH] = {0}, iv_kdf[OPMSG_MAX_KEY_LENGTH] = {0};
+	char aad_tag[16] = {0};
 	RSA *rsa = nullptr;
 	// an ECDH or DH key
 	vector<PKEYbox *> ec_dh;
@@ -177,12 +225,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	for (i = 0; i < sizeof(iv); ++i)
 		iv[i] = i;
 
-	memset(aad_tag, 0, sizeof(aad_tag));
-
 	if (!src_persona || !dst_persona)
 		return build_error("encrypt: No src/dst personas specified!", -1);
 
-	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
+	if (!is_valid_halgo(phash, 1) || !is_valid_halgo(khash, 1) || !is_valid_halgo(shash, 1) || !is_valid_calgo(calgo, 1))
 		return build_error("encrypt: Invalid algo name(s).", -1);
 
 	if (!is_hex_hash(src_id_hex) || !is_hex_hash(dst_id_hex))
@@ -396,20 +442,28 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	outmsg += marker::opmsg_databegin;
 
-	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v123(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
-		return build_error("encrypt: Error deriving key: ", -1);
+	string pqsalt1{""};
+	if (dst_persona->is_pq1())
+		pqsalt1 = dst_persona->get_pqsalt1();
+
+	unsigned char key[OPMSG_MAX_KEY_LENGTH] = {0};
+	if (kdf_v1234(version, secret.get(), slen, src_id_hex, dst_id_hex, pqsalt1, key) < 0)
+		return build_error("encrypt::kdf_v1234: Error deriving key: ", -1);
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
 	if (!c_ctx.get())
 		return build_error("encrypt::EVP_CIPHER_CTX_new: ", -1);
 	if (EVP_EncryptInit_ex(c_ctx.get(), algo2cipher(calgo), nullptr, key, iv) != 1)
 		return build_error("encrypt::EVP_EncryptInit_ex: ", -1);
 
-	// GCM ciphers need special treatment, the persona src id is used as AAD
+	// AEAD ciphers need special treatment
 	if (has_aad) {
 		int aadlen = 0;
-		if (EVP_EncryptUpdate(c_ctx.get(), nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
-			return build_error("encrypt::EVP_EncryptUpdate (AAD):", -1);
+		auto aead = derive_aead(version, src_id_hex, outmsg);
+		if (!aead.size())
+			return build_error("encrypt: Can't derive AEAD:", -1);
+
+		if (EVP_EncryptUpdate(c_ctx.get(), nullptr, &aadlen, &aead[0], aead.size()) != 1)
+			return build_error("encrypt::EVP_EncryptUpdate (AEAD):", -1);
 	}
 	EVP_CIPHER_CTX_set_padding(c_ctx.get(), 1);
 
@@ -436,7 +490,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 				return build_error("encrypt::EVP_EncryptFinal_ex:", -1);
 			outlen += padlen;
 			if (has_aad) {
-				if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_GET_TAG, sizeof(aad_tag), aad_tag) != 1)
+				if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_AEAD_GET_TAG, sizeof(aad_tag), aad_tag) != 1)
 					return build_error("encrypt::EVP_CIPHER_CTX_ctrl:", -1);
 				b64_encode(aad_tag, sizeof(aad_tag), b64_aad_tag);
 				b64_aad_tag.insert(0, marker::aad_tag);
@@ -468,8 +522,11 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		outmsg.insert(0, marker::version1);
 	else if (version == 2)
 		outmsg.insert(0, marker::version2);
-	else
+	else if (version == 3)
 		outmsg.insert(0, marker::version3);
+	else
+		outmsg.insert(0, marker::version4);
+
 	outmsg.insert(0, marker::opmsg_begin);
 	outmsg += marker::opmsg_end;
 
@@ -514,7 +571,7 @@ int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_ta
 			return build_error("parse_hdr: Error finding end of AAD tag.", -1);
 		string b64_aad_tag = hdr.substr(pos, nl - pos);
 		b64_decode(b64_aad_tag, s);
-		if (s.size() > 32)
+		if (s.size() < 16 || s.size() > 32)
 			return build_error("parse_hdr: Invalid AAD tag size.", -1);
 		aad_tag.insert(aad_tag.end(), s.begin(), s.end());
 	}
@@ -591,7 +648,7 @@ int message::decrypt(string &raw)
 	string::size_type pos = string::npos, pos_sigend = string::npos, nl = string::npos;
 	vector<PKEYbox *> ec_dh;
 	RSA *rsa = nullptr;
-	unsigned char iv[OPMSG_MAX_IV_LENGTH];
+	unsigned char iv[OPMSG_MAX_IV_LENGTH] = {0};
 	vector<char> aad_tag;
 	vector<string> kexdhs;
 	string kexdh = "";
@@ -614,8 +671,11 @@ int message::decrypt(string &raw)
 		version = 2;
 		if ((pos = raw.find(marker::version2)) != 0) {
 			version = 3;
-			if ((pos = raw.find(marker::version3)) != 0)
-				return build_error("decrypt: Not in OPMSG format (2). Need to update opmsg?", -1);
+			if ((pos = raw.find(marker::version3)) != 0) {
+				version = 4;
+				if ((pos = raw.find(marker::version4)) != 0)
+					return build_error("decrypt: Not in OPMSG format (2). Need to update opmsg?", -1);
+			}
 		}
 	}
 
@@ -655,7 +715,7 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Not in OPMSG format (7).", -1);
 
 	phash = b[0]; khash = b[1]; shash = b[2]; calgo = b[3];
-	if (!is_valid_halgo(phash) || !is_valid_halgo(khash) || !is_valid_halgo(shash) || !is_valid_calgo(calgo))
+	if (!is_valid_halgo(phash, 0) || !is_valid_halgo(khash, 0) || !is_valid_halgo(shash, 0) || !is_valid_calgo(calgo, 0))
 		return build_error("decrypt: Not in OPMSG format (8). Invalid algo name. Need to update opmsg?", -1);
 
 	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
@@ -702,43 +762,50 @@ int message::decrypt(string &raw)
 	evp = nullptr;
 
 	//
-	// at this point, the message is valid authenticated by src_id
+	// at this point, the message is valid authenticated by src_id's signature.
+	// AEAD MAC (if any) still to proove, so do not import any attached keys yet.
 	//
 
 	string::size_type databegin = string::npos;
 	if ((databegin = raw.find(marker::opmsg_databegin)) == string::npos)
 		return build_error("decrypt: Not in OPMSG format (12).", -1);
 
-	string hdr = raw.substr(0, databegin);
+	string hdr = raw.substr(0, databegin + marker::opmsg_databegin.size());
+
+	// parse_hdr() will modify 'hdr', so make a copy for AAD computation later
+	string aead_hdr = hdr;
 
 	// parse the remaining parts of the header
-	// Fills: kex_id_hex, dst_id_hex, kexdhs, aad_tag
+	// Fills: kex_id_hex, dst_id_hex, kexdhs, aad_tag, ecdh_keys, ec_domains
 	if (parse_hdr(hdr, kexdhs, aad_tag) != 1)
 		return build_error("decrypt: " + err, -1);
+
+	// header parsed correctly, split it off data body
+	raw.erase(0, databegin + marker::opmsg_databegin.size());
 
 	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
 	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || (!dst_persona->can_decrypt() && calgo != "null"))
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
 
-	// header parsed correctly, split it off data body
-	raw.erase(0, databegin + marker::opmsg_databegin.size());
-
-	// import the new (EC)DH keys that shipped with the message
-	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
-		// ec_domains validity checked in parse_hdr()
-		vector<string> v(it, it + ec_domains);
-		if ((src_persona->add_dh_pubkey(khash, v)).empty())
-			it = ecdh_keys.erase(it, it + ec_domains);
-		else
-			it += ec_domains;
-	}
+	if (dst_persona->is_pq1() && !is_valid_pq_calgo(calgo))
+		return build_error("decrypt: Persona requires PQC, but non-PQC calgo specified in message.", 0);
 
 	src_name = src_persona->get_name();
-	src_persona.reset();
 
-	// if null encryption, thats all!
-	if (calgo == "null")
+	// Not recommended, but if "null" encrypted, import keys and thats all!
+	if (calgo == "null") {
+
+		for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
+			// ec_domains validity checked in parse_hdr()
+			vector<string> v(it, it + ec_domains);
+			if ((src_persona->add_dh_pubkey(khash, v)).empty())
+				it = ecdh_keys.erase(it, it + ec_domains);
+			else
+				it += ec_domains;
+		}
+
 		return 1;
+	}
 
 	// everything else have to have a kex
 	if (kexdhs.empty())
@@ -891,8 +958,12 @@ int message::decrypt(string &raw)
 		memcpy(secret.get(), &secret_v[0], slen);
 	}
 
-	unsigned char key[OPMSG_MAX_KEY_LENGTH];
-	if (kdf_v123(version, secret.get(), slen, src_id_hex, dst_id_hex, key) < 0)
+	string pqsalt1{""};
+	if (dst_persona->is_pq1())
+		pqsalt1 = dst_persona->get_pqsalt1();
+
+	unsigned char key[OPMSG_MAX_KEY_LENGTH] = {0};
+	if (kdf_v1234(version, secret.get(), slen, src_id_hex, dst_id_hex, pqsalt1, key) < 0)
 		return build_error("decrypt: Error deriving key: ", -1);
 
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
@@ -903,12 +974,25 @@ int message::decrypt(string &raw)
 
 	if (has_aad) {
 		int aadlen = 0;
-		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_GCM_SET_TAG, aad_tag.size(), &aad_tag[0]) != 1)
+		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_AEAD_SET_TAG, aad_tag.size(), &aad_tag[0]) != 1)
 			return build_error("decrypt::EVP_CIPHER_CTX_ctrl: ", -1);
-		if (EVP_DecryptUpdate(c_ctx.get(), nullptr, &aadlen, (unsigned char *)(src_id_hex.c_str()), src_id_hex.size()) != 1)
-			return build_error("decrypt::EVP_DecryptUpdate (AAD):", -1);
-	}
 
+		if (version > 3) {
+			string::size_type idx;
+			if ((idx = aead_hdr.find(marker::aad_tag)) == string::npos)
+				return build_error("decrypt: Can't find AAD tag (1).", -1);
+			auto nl_idx = aead_hdr.find("\n", idx);
+			if (nl_idx == string::npos)
+				return build_error("decrypt: Can't find AAD tag (2).", -1);
+			aead_hdr.erase(idx, nl_idx - idx + 1);
+		}
+
+		auto aead = derive_aead(version, src_id_hex, aead_hdr);
+		if (!aead.size())
+			return build_error("decrypt: Can't derive AEAD.", -1);
+		if (EVP_DecryptUpdate(c_ctx.get(), nullptr, &aadlen, &aead[0], aead.size()) != 1)
+			return build_error("decrypt::EVP_DecryptUpdate (AEAD):", -1);
+	}
 	EVP_CIPHER_CTX_set_padding(c_ctx.get(), 1);
 
 	raw.erase(remove(raw.begin(), raw.end(), '\n'), raw.end());
@@ -946,6 +1030,17 @@ int message::decrypt(string &raw)
 
 	raw = plaintext;
 	plaintext.clear();
+
+	// Now that integrity is also AEAD-proof (if it exists), import the new (EC)DH keys
+	// that shipped with the message
+	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
+		// ec_domains validity checked in parse_hdr()
+		vector<string> v(it, it + ec_domains);
+		if ((src_persona->add_dh_pubkey(khash, v)).empty())
+			it = ecdh_keys.erase(it, it + ec_domains);
+		else
+			it += ec_domains;
+	}
 
 	return 1;
 }

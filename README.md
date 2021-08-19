@@ -30,6 +30,7 @@ Features:
 * seamless mutt integration
 * Key format suitable for easy use with QR-codes
 * optional cross-domain ECDH Kex
+* PQC-safe operations mode if desired
 
 
 _opmsg_ builds fine with any of the OpenSSL, LibreSSL and BoringSSL libcrypto libraries.
@@ -328,6 +329,30 @@ will nevertheless be generated randomly, just as for other personas.
 Brainkey personas can then be used just as normal. Once created, you may just
 forget the brainkey, as you will never need to generate it again.
 
+
+Post-Quantum Personas
+---------------------
+
+As of `version=4` messages, *opmsg* supports personas who resist quantum computing power.
+These personas have type `pq1` in the `opmsg -l` listing and are basically brainkey
+personas as above but include a symmetric salt thats used together with the ECDH Kex
+to derive the session key. The integrity of `version=4` (and above) messages is not only
+protected by asymmetric signatures (RSA or ECC) but by also extending the AAD of AES-GCM to
+the entire header, including exchanged keys and the Kex part. This ensures that even
+with quantum computing power, an adversary cannot modify the message or break the session
+keys. PQC-Personas are generated similar to `brainkey1` personas:
+
+```
+$ opmsg --name=quantum-tarantino --deniable --salt2 1234 --brainkey2 --newecp=secp521r1 --phash=sha256
+[...]
+```
+
+I.e. by using `--brainkey2` instead of `--brainkey1`.
+For `pq1` personas, *opmsg* only accepts `aes256gcm` and `chacha20-poly1305` cipher algos,
+in order to fully protect the entire message with AAD as described above.
+This symmetric salt solution is recommended by the BSI (Federal Office of Information
+Security in good old Germany) durin the transitioning phase. Note, that neither *OpenSSL*
+supports PQC yet, nor are there any standartized algorithms.
 
 
 Keys
