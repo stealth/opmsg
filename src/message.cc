@@ -242,6 +242,14 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 
 	if (!src_persona->can_sign())
 		return build_error("encrypt: missing signature key for src persona " + src_id_hex, -1);
+
+	if (src_persona->is_pq1()) {
+		if (version < 4)
+			return build_error("encrypt: PQC personas need configured version >= 4.", -1);
+		if (src_id_hex != dst_id_hex)
+			return build_error("encrypt: PQC personas must be deniable.", -1);
+	}
+
 	if (!dst_persona->can_encrypt())
 		return build_error("encrypt:: missing key for dst persona " + dst_id_hex, -1);
 
@@ -285,8 +293,11 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			outmsg.insert(0, marker::version1);
 		else if (version == 2)
 			outmsg.insert(0, marker::version2);
-		else
+		else if (version == 3)
 			outmsg.insert(0, marker::version3);
+		else
+			outmsg.insert(0, marker::version4);
+
 		outmsg.insert(0, marker::opmsg_begin);
 		outmsg += marker::opmsg_end;
 		raw = outmsg;
@@ -443,8 +454,8 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	outmsg += marker::opmsg_databegin;
 
 	string pqsalt1{""};
-	if (dst_persona->is_pq1())
-		pqsalt1 = dst_persona->get_pqsalt1();
+	if (src_persona->is_pq1())
+		pqsalt1 = src_persona->get_pqsalt1();
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH] = {0};
 	if (kdf_v1234(version, secret.get(), slen, src_id_hex, dst_id_hex, pqsalt1, key) < 0)
@@ -787,7 +798,7 @@ int message::decrypt(string &raw)
 	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || (!dst_persona->can_decrypt() && calgo != "null"))
 		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
 
-	if (dst_persona->is_pq1() && !is_valid_pq_calgo(calgo))
+	if (dst_persona->is_pq1() && (!is_valid_pq_calgo(calgo) || version < 4))
 		return build_error("decrypt: Persona requires PQC, but non-PQC calgo specified in message.", 0);
 
 	src_name = src_persona->get_name();
