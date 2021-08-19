@@ -352,7 +352,9 @@ For `pq1` personas, *opmsg* only accepts `aes256gcm` and `chacha20-poly1305` cip
 in order to fully protect the entire message with AAD as described above.
 This symmetric salt solution is recommended by the BSI (Federal Office of Information
 Security in good old Germany) durin the transitioning phase. Note, that neither *OpenSSL*
-supports PQC yet, nor are there any standartized algorithms.
+supports PQC yet, nor are there any standartized algorithms, nor recommend any of the PQC
+projects to use their code in production, so having this transitioning solution is the most
+portable way of adding PQC to *opmsg*.
 
 
 Keys
