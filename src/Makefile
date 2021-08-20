@@ -63,11 +63,11 @@ contrib: build build/opmux build/opcoin
 build/opmsg: build/keystore.o build/opmsg.o build/misc.o build/config.o build/message.o build/marker.o build/base64.o build/deleters.o build/missing.o build/brainkey.o
 	$(LD) build/keystore.o build/opmsg.o build/misc.o build/config.o build/message.o build/marker.o build/base64.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
 
-build/opcoin: build/keystore.o build/opcoin.o build/config.o build/deleters.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o
-	$(LD) build/keystore.o build/opcoin.o build/config.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
+build/opcoin: build/keystore.o build/opcoin.o build/config.o build/deleters.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o build/base64.o
+	$(LD) build/keystore.o build/opcoin.o build/config.o build/base58.o build/misc.o build/marker.o build/deleters.o build/missing.o build/brainkey.o build/base64.o $(LDFLAGS) $(LIBS) -o $@
 
-build/opmux: build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o
-	$(LD) build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o $(LDFLAGS) $(LIBS) -o $@
+build/opmux: build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o build/base64.o
+	$(LD) build/keystore.o build/opmux.o build/misc.o build/marker.o build/config.o build/deleters.o build/missing.o build/brainkey.o build/base64.o $(LDFLAGS) $(LIBS) -o $@
 
 build/opmux.o: contrib/opmux.cc
 	$(CXX) -I . -I .. $(CXXFLAGS) -c $< -o build/opmux.o
