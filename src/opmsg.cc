@@ -81,7 +81,7 @@ enum {
 };
 
 
-const string banner = "\nopmsg: version=1.83 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopmsg: version=1.84 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg\n\n";
 
 /* The iostream lib works not very well wrt customized buffering and flushing
  * (unlike C's setbuffer), so we use string streams and flush ourself when we need to.
@@ -102,7 +102,6 @@ void oflush()
 	cout<<ostr.str();
 	ostr.str("");
 }
-
 
 
 void usage(const char *p)
@@ -146,7 +145,6 @@ void usage(const char *p)
 }
 
 
-
 int read_msg(const string &path, string &msg)
 {
 	msg = "";
@@ -160,7 +158,12 @@ int read_msg(const string &path, string &msg)
 	}
 
 	const size_t blen = 0x10000;
-	char *buf = new char[blen];
+	char *buf = new (nothrow) char[blen];
+	if (!buf) {
+		if (was_opened)
+			close(fd);
+		return -1;
+	}
 	ssize_t r = 0;
 	do {
 		r = read(fd, buf, blen);
@@ -1331,5 +1334,4 @@ int main(int argc, char **argv)
 
 	return r;
 }
-
 

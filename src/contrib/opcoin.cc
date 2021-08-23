@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2016 by Sebastian Krahmer,
+ * (C) 2015-2021 by Sebastian Krahmer,
  *               sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -389,7 +389,7 @@ void usage(const string &p)
 using namespace ns_opcoin;
 
 
-const string banner = "\nopcoin: version=1.78 -- (C) 2018 opmsg-team: https://github.com/stealth/opmsg\n\n";
+const string banner = "\nopcoin: version=1.84 -- (C) 2021 opmsg-team: https://github.com/stealth/opmsg\n\n";
 
 
 int main(int argc, char **argv)
