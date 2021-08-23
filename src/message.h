@@ -50,10 +50,10 @@ enum {
 
 class message {
 
-	unsigned int d_version, d_max_new_dh_keys{MAX_NEW_DH_KEYS};
+	unsigned int d_version{4}, d_max_new_dh_keys{MAX_NEW_DH_KEYS};
 
 	std::string d_src_id_hex{""}, d_dst_id_hex{""}, d_kex_id_hex{""}, d_src_name{""};
-	std::string d_phash, d_khash, d_shash, d_calgo;
+	std::string d_phash{""}, d_khash{""}, d_shash{""}, d_calgo{""};
 	std::string d_cfgbase{""}, d_err{""};
 
 	bool d_peer_isolation{0};
@@ -155,12 +155,6 @@ public:
 		d_ec_domains = d;
 	}
 
-	int decrypt(std::string &msg);
-
-	int encrypt(std::string &msg, persona *src_persona, persona *dst_persona);
-
-	int sign(const std::string &msg, persona *src_persona, std::string &result);
-
 	void add_ecdh_key(const std::string &s)
 	{
 		d_ecdh_keys.emplace_back(s);
@@ -175,6 +169,12 @@ public:
 	{
 		return d_err.c_str();
 	}
+
+	int decrypt(std::string &);
+
+	int encrypt(std::string &, persona *, persona *);
+
+	int sign(const std::string &, persona *, std::string &);
 };
 
 

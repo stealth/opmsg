@@ -163,8 +163,12 @@ class persona {
 
 	std::string d_id{""}, d_name{""}, d_link_src{""}, d_ptype{""}, d_pqsalt{""};
 
+	// due to cross-domain ECDH, for one Kex we can have multiple ECDH Keys,
+	// not just one as with traditional ECDH; hence a vector<> of these
+	using VPKEYbox = std::vector<PKEYbox *>;
+
 	// The (EC)DH 'session' keys this persona holds
-	std::map<std::string, std::vector<PKEYbox *>> d_keys;
+	std::map<std::string, VPKEYbox> d_keys;
 
 	// List of hashes of all imported keys so far
 	std::map<std::string, unsigned int> d_imported;
@@ -193,7 +197,7 @@ class persona {
 		return r;
 	}
 
-	int load_dh(const std::string &hex);
+	int load_dh(const std::string &);
 
 public:
 
@@ -227,8 +231,6 @@ public:
 	{
 		return d_ptype;
 	}
-
-	int check_type();
 
 	// is a Post Quantum1 persona?
 	bool is_pq1()
@@ -290,46 +292,10 @@ public:
 		return d_link_src;
 	}
 
-	DHbox *new_dh_params();
-
-	DHbox *new_dh_params(const std::string &pem);
-
-	std::vector<PKEYbox *> add_dh_pubkey(const std::string &hash, std::vector<std::string> &pems);
-
-	std::vector<PKEYbox *> add_dh_pubkey(const EVP_MD *md, std::vector<std::string> &pems);
-
-	std::vector<PKEYbox *> gen_kex_key(const std::string &hash, const std::string & = "");
-
-	int gen_dh_key(const EVP_MD *md, std::string&, std::string&, std::string&);
-
-	std::vector<PKEYbox *> gen_kex_key(const EVP_MD *md, const std::string & = "");
-
-	std::vector<PKEYbox *> find_dh_key(const std::string &hex);
-
-	int make_pq1(const std::string &, const std::string &, const std::string &);
-
-	int del_dh_id(const std::string &hex);
-
-	int del_dh_pub(const std::string &hex);
-
-	int del_dh_priv(const std::string &hex);
-
 	bool has_imported(const std::string &hex)
 	{
 		return d_imported.count(hex) > 0;
 	}
-
-	void used_key(const std::string &hex, bool);
-
-	int load(const std::string &hex = "", uint32_t how = LFLAGS_ALL);
-
-	int link(const std::string &hex);
-
-	std::map<std::string, std::vector<PKEYbox *>>::iterator first_key();
-
-	std::map<std::string, std::vector<PKEYbox *>>::iterator end_key();
-
-	std::map<std::string, std::vector<PKEYbox *>>::iterator next_key(const std::map<std::string, std::vector<PKEYbox *>>::iterator &);
 
 	int size()
 	{
@@ -340,6 +306,44 @@ public:
 	{
 		return d_err.c_str();
 	}
+
+	int check_type();
+
+	DHbox *new_dh_params();
+
+	DHbox *new_dh_params(const std::string &pem);
+
+	VPKEYbox add_dh_pubkey(const std::string &, std::vector<std::string> &);
+
+	VPKEYbox add_dh_pubkey(const EVP_MD *, std::vector<std::string> &);
+
+	VPKEYbox gen_kex_key(const std::string &, const std::string & = "");
+
+	int gen_dh_key(const EVP_MD *md, std::string&, std::string&, std::string&);
+
+	VPKEYbox gen_kex_key(const EVP_MD *md, const std::string & = "");
+
+	VPKEYbox find_dh_key(const std::string &hex);
+
+	int make_pq1(const std::string &, const std::string &, const std::string &);
+
+	int del_dh_id(const std::string &hex);
+
+	int del_dh_pub(const std::string &hex);
+
+	int del_dh_priv(const std::string &hex);
+
+	void used_key(const std::string &, bool);
+
+	int load(const std::string &hex = "", uint32_t how = LFLAGS_ALL);
+
+	int link(const std::string &);
+
+	decltype(d_keys)::iterator first_key();
+
+	decltype(d_keys)::iterator end_key();
+
+	decltype(d_keys)::iterator next_key(const decltype(d_keys)::iterator &);
 
 	friend class keystore;
 };
@@ -375,7 +379,7 @@ class keystore {
 
 public:
 
-	keystore(const std::string& hash, const std::string &base = ".opmsg")
+	keystore(const std::string &hash, const std::string &base = ".opmsg")
 		: d_cfgbase(base)
 	{
 		d_md = algo2md(hash);
@@ -393,35 +397,35 @@ public:
 		return d_md;
 	}
 
-	int load(const std::string &id = "", uint32_t how = LFLAGS_ALL);
-
-	int gen_rsa(std::string &pub, std::string &priv);
-
-	int gen_ec(std::string &pub, std::string &priv, int);
-
-	persona *add_persona(const std::string &name, const std::string &rsa_pub_pem, const std::string &rsa_priv_pem, const std::string &dhparams_pem);
-
-	persona *find_persona(const std::string &hex);
-
 	int size()
 	{
 		return d_personas.size();
 	}
 
-	std::map<std::string, persona *>::iterator first_pers();
-
-	std::map<std::string, persona *>::iterator end_pers();
-
-	std::map<std::string, persona *>::iterator next_pers(const std::map<std::string, persona *>::iterator &);
-
-
 	const char *why()
 	{
 		return d_err.c_str();
 	}
+
+	int load(const std::string &id = "", uint32_t how = LFLAGS_ALL);
+
+	int gen_rsa(std::string &, std::string &);
+
+	int gen_ec(std::string &, std::string &, int);
+
+	persona *add_persona(const std::string &, const std::string &, const std::string &, const std::string &);
+
+	persona *find_persona(const std::string &);
+
+	decltype(d_personas)::iterator first_pers();
+
+	decltype(d_personas)::iterator end_pers();
+
+	decltype(d_personas)::iterator next_pers(const decltype(d_personas)::iterator &);
 };
 
-int normalize_and_hexhash(const EVP_MD *, std::string &s, std::string &);
+
+int normalize_and_hexhash(const EVP_MD *, std::string &, std::string &);
 
 } // namespace
 

@@ -38,9 +38,6 @@ string priv_end = "-----END PRIVATE KEY-----\n";
 string sig_begin = "-----BEGIN SIGNATURE-----\n";
 string sig_end = "-----END SIGNATURE-----\n";
 
-string dh_params_begin = "-----BEGIN DH PARAMETERS-----\n";
-string dh_params_end = "-----END DH PARAMETERS-----\n";
-
 string opmsg_begin = "-----BEGIN OPMSG-----\n";
 string opmsg_end = "\n-----END OPMSG-----\n";
 string opmsg_databegin = "-----BEGIN OPMSG DATA-----\n";

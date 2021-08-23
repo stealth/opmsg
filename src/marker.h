@@ -39,9 +39,6 @@ extern std::string priv_end;
 extern std::string sig_begin;
 extern std::string sig_end;
 
-extern std::string dh_params_begin;
-extern std::string dh_params_end;
-
 extern std::string opmsg_begin;
 extern std::string opmsg_end;
 extern std::string opmsg_databegin;

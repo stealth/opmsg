@@ -503,28 +503,28 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 }
 
 
-map<string, persona *>::iterator keystore::first_pers()
+decltype(keystore::d_personas)::iterator keystore::first_pers()
 {
 	return d_personas.begin();
 }
 
 
-map<string, persona *>::iterator keystore::end_pers()
+decltype(keystore::d_personas)::iterator keystore::end_pers()
 {
 	return d_personas.end();
 }
 
 
-map<string, persona *>::iterator keystore::next_pers(const map<string, persona *>::iterator &it)
+decltype(keystore::d_personas)::iterator keystore::next_pers(const decltype(d_personas)::iterator &it)
 {
 	auto it2 = it;
 	return ++it2;
 }
 
 
-vector<PKEYbox *> persona::find_dh_key(const string &hex)
+persona::VPKEYbox persona::find_dh_key(const string &hex)
 {
-	vector<PKEYbox *> v;
+	VPKEYbox v;
 
 	// In case EC persona peer is out of ephemeral ECDH keys
 	if (hex == marker::ec_kex_id && d_ptype == marker::ec) {
@@ -539,19 +539,19 @@ vector<PKEYbox *> persona::find_dh_key(const string &hex)
 }
 
 
-map<string, vector<PKEYbox *>>::iterator persona::first_key()
+decltype(persona::d_keys)::iterator persona::first_key()
 {
 	return d_keys.begin();
 }
 
 
-map<string, vector<PKEYbox *>>::iterator persona::end_key()
+decltype(persona::d_keys)::iterator persona::end_key()
 {
 	return d_keys.end();
 }
 
 
-map<string, vector<PKEYbox *>>::iterator persona::next_key(const map<string, vector<PKEYbox *>>::iterator &it)
+decltype(persona::d_keys)::iterator persona::next_key(const decltype(d_keys)::iterator &it)
 {
 	auto it2 = it;
 	return ++it2;
@@ -1037,13 +1037,13 @@ DHbox *persona::new_dh_params()
 
 
 // get a new ephemeral (session, kex-id) key. Bind to a destination peer if given
-vector<PKEYbox *> persona::gen_kex_key(const string &hash, const string &peer)
+persona::VPKEYbox persona::gen_kex_key(const string &hash, const string &peer)
 {
 	return gen_kex_key(algo2md(hash), peer);
 }
 
 
-vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
+persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 {
 	string pub_pem = "", priv_pem = "";
 	struct stat st;
@@ -1052,7 +1052,7 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	vector<pair<string, string>> kex_keys;
 
 	// v0 empty vector for error return
-	vector<PKEYbox *> v0;
+	VPKEYbox v0;
 	string hex = "", h = "";
 
 	if (d_ptype == marker::ec || config::ecdh_rsa) {
@@ -1088,7 +1088,7 @@ vector<PKEYbox *> persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	if (mkdir_helper(d_cfgbase + "/" + d_id, tmpdir) < 0)
 		return build_error("gen_kex_key::mkdir:", v0);
 
-	unique_ptr<vector<PKEYbox *>, vector_pkeybox_del> pboxes(new (nothrow) vector<PKEYbox *>, vector_pkeybox_free);
+	unique_ptr<VPKEYbox, vector_pkeybox_del> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
 
 	for (unsigned int i = 0; i < kex_keys.size(); ++i) {
 		pub_pem = kex_keys[i].first;
@@ -1251,7 +1251,7 @@ void persona::used_key(const string &hexid, bool u)
 }
 
 
-vector<PKEYbox *> persona::add_dh_pubkey(const string &hash, vector<string> &pem)
+persona::VPKEYbox persona::add_dh_pubkey(const string &hash, vector<string> &pem)
 {
 	return add_dh_pubkey(algo2md(hash), pem);
 }
@@ -1259,7 +1259,7 @@ vector<PKEYbox *> persona::add_dh_pubkey(const string &hash, vector<string> &pem
 
 // import a new (EC)DH pub key from a message to be later used for sending
 // encrypted messages to this persona
-vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
+persona::VPKEYbox persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 {
 	struct stat st = {0};
 	int fd = -1, keytype = -1, keytype0 = -1;
@@ -1269,7 +1269,7 @@ vector<PKEYbox *> persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 	if (pubs.size() > 3)
 		return build_error("add_dh_pubkey: Too many keys in import vector.", v0);
 
-	unique_ptr<vector<PKEYbox *>, vector_pkeybox_del> pboxes(new (nothrow) vector<PKEYbox *>, vector_pkeybox_free);
+	unique_ptr<VPKEYbox, vector_pkeybox_del> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
 	unique_ptr<FILE, FILE_del> f(nullptr, ffclose);
 
 	for (unsigned int i = 0; i < pubs.size(); ++i) {
