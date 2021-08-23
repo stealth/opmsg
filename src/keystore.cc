@@ -710,7 +710,7 @@ int persona::make_pq1(const string &type, const string &secret, const string &sa
 	unique_ptr<FILE, FILE_del> f(fopen(pqc.c_str(), "w"), ffclose);
 	if (!f.get())
 		return build_error("make_pq1::fopen:", -1);
-	fprintf(f.get(), "# DO NOT EDIT\npqtype=%s\npqsalt1=%s\n", type.c_str(), b64_pqsalt.c_str());
+	fprintf(f.get(), "# DO NOT EDIT. KEEP SECRET.\npqtype=%s\npqsalt1=%s\n", type.c_str(), b64_pqsalt.c_str());
 	f.reset();
 
 	errno = 0;

@@ -418,9 +418,9 @@ int do_encrypt(const string &dst_id, const string &s, int may_append)
 		vector<PKEYbox *> vpbox = src_p->gen_kex_key(config::khash, dst_p->get_id());
 		if (vpbox.size() > 0) {
 			newdh.push_back(vpbox[0]->d_hex);
-			msg.ec_domains = vpbox.size();
+			msg.set_ec_domains(vpbox.size());
 			for (auto j = vpbox.begin(); j != vpbox.end(); ++j)
-				msg.ecdh_keys.push_back((*j)->d_pub_pem);
+				msg.add_ecdh_key((*j)->d_pub_pem);
 		}
 	}
 
@@ -529,7 +529,7 @@ int do_decrypt()
 		estr<<prefix<<"GOOD signature from persona "<<idformat(msg.src_id());
 		if (msg.get_srcname().size() > 0)
 			estr<<" ("<<msg.get_srcname()<<")";
-		estr<<endl<<prefix<<"Imported "<<msg.ecdh_keys.size()<<" new (EC)DH key(s) from "<<msg.ec_domains<<" domain(s).\n\n";
+		estr<<endl<<prefix<<"Imported "<<msg.num_ecdh_keys()<<" new (EC)DH key(s) from "<<msg.get_ec_domains()<<" domain(s).\n\n";
 		eflush();
 
 		if (write_msg(config::outfile, s, found_one) < 0) {

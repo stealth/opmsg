@@ -165,7 +165,7 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 	if (!src_persona->can_sign())
 		return build_error("sign:: Persona has no pkey.", -1);
 
-	if (!is_valid_halgo(shash, 1))
+	if (!is_valid_halgo(d_shash, 1))
 		return build_error("sign:: Not a valid hash algo for signing.", -1);
 
 	// do not take ownership
@@ -180,7 +180,7 @@ int message::sign(const string &msg, persona *src_persona, string &result)
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return build_error("sign::EVP_MD_CTX_create:", -1);
-	if (EVP_DigestSignInit(md_ctx.get(), nullptr, algo2md(shash), nullptr, evp) != 1)
+	if (EVP_DigestSignInit(md_ctx.get(), nullptr, algo2md(d_shash), nullptr, evp) != 1)
 		return build_error("sign::EVP_DigestSignInit:", -1);
 	if (EVP_DigestSignUpdate(md_ctx.get(), msg.c_str(), msg.size()) != 1)
 		return build_error("sign::EVP_DigestSignUpdate:", -1);
@@ -217,7 +217,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	vector<string> b64pubkeys;
 	string outmsg = "", b64sig = "", iv_b64 = "", b64_aad_tag = "";
 	string::size_type aad_tag_insert_pos = string::npos;
-	bool no_dh_key = (kex_id_hex == marker::rsa_kex_id);
+	bool no_dh_key = (d_kex_id_hex == marker::rsa_kex_id);
 	int ecode = 0;
 	size_t n = 0;
 	unsigned int i = 0;
@@ -228,35 +228,35 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	if (!src_persona || !dst_persona)
 		return build_error("encrypt: No src/dst personas specified!", -1);
 
-	if (!is_valid_halgo(phash, 1) || !is_valid_halgo(khash, 1) || !is_valid_halgo(shash, 1) || !is_valid_calgo(calgo, 1))
+	if (!is_valid_halgo(d_phash, 1) || !is_valid_halgo(d_khash, 1) || !is_valid_halgo(d_shash, 1) || !is_valid_calgo(d_calgo, 1))
 		return build_error("encrypt: Invalid algo name(s).", -1);
 
-	if (!is_hex_hash(src_id_hex) || !is_hex_hash(dst_id_hex))
+	if (!is_hex_hash(d_src_id_hex) || !is_hex_hash(d_dst_id_hex))
 		return build_error("encrypt: Invalid persona id(s).", -1);
 
-	if (src_id_hex != src_persona->get_id() || dst_id_hex != dst_persona->get_id())
+	if (d_src_id_hex != src_persona->get_id() || d_dst_id_hex != dst_persona->get_id())
 		return build_error("encrypt: Persona/ID specification mismatch.", -1);
 
-	if (!is_hex_hash(kex_id_hex))
-		return build_error("encrypt: Invalid DH key id " + kex_id_hex, -1);
+	if (!is_hex_hash(d_kex_id_hex))
+		return build_error("encrypt: Invalid DH key id " + d_kex_id_hex, -1);
 
 	if (!src_persona->can_sign())
-		return build_error("encrypt: missing signature key for src persona " + src_id_hex, -1);
+		return build_error("encrypt: missing signature key for src persona " + d_src_id_hex, -1);
 
 	if (src_persona->is_pq1()) {
-		if (version < 4)
+		if (d_version < 4)
 			return build_error("encrypt: PQC personas need configured version >= 4.", -1);
-		if (src_id_hex != dst_id_hex)
+		if (d_src_id_hex != d_dst_id_hex)
 			return build_error("encrypt: PQC personas must be deniable.", -1);
 	}
 
 	if (!dst_persona->can_encrypt())
-		return build_error("encrypt:: missing key for dst persona " + dst_id_hex, -1);
+		return build_error("encrypt:: missing key for dst persona " + d_dst_id_hex, -1);
 
 	if (!no_dh_key) {
-		ec_dh = dst_persona->find_dh_key(kex_id_hex);
+		ec_dh = dst_persona->find_dh_key(d_kex_id_hex);
 		if (ec_dh.empty() || !ec_dh[0]->can_encrypt())
-			return build_error("encrypt: Invalid (EC)DH key id " + kex_id_hex, -1);
+			return build_error("encrypt: Invalid (EC)DH key id " + d_kex_id_hex, -1);
 	}
 
 	if (RAND_bytes(iv, sizeof(iv)) != 1)
@@ -268,32 +268,32 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 	memcpy(iv, iv_kdf, sizeof(iv));
 	b64_encode(reinterpret_cast<char *>(iv), sizeof(iv), iv_b64);
 
-	outmsg = marker::algos + phash + ":" + khash + ":" + shash + ":" + calgo + ":" + iv_b64 + "\n";
+	outmsg = marker::algos + d_phash + ":" + d_khash + ":" + d_shash + ":" + d_calgo + ":" + iv_b64 + "\n";
 
 	char cfg_s[32] = {0};
-	snprintf(cfg_s, sizeof(cfg_s), "%s%u:%u:\n", marker::cfg_num.c_str(), version, ec_domains);
+	snprintf(cfg_s, sizeof(cfg_s), "%s%u:%u:\n", marker::cfg_num.c_str(), d_version, d_ec_domains);
 	outmsg += cfg_s;
 
 	// in case of GCM modes, the AAD tag value goes right here
 	aad_tag_insert_pos = outmsg.size();
 
-	outmsg += marker::src_id + src_id_hex + "\n";
-	outmsg += marker::dst_id + dst_id_hex + "\n";
-	outmsg += marker::kex_id + kex_id_hex + "\n";
+	outmsg += marker::src_id + d_src_id_hex + "\n";
+	outmsg += marker::dst_id + d_dst_id_hex + "\n";
+	outmsg += marker::kex_id + d_kex_id_hex + "\n";
 
 	// null encryption: plaintext signing case
-	if (calgo == "null") {
+	if (d_calgo == "null") {
 		outmsg += marker::opmsg_databegin;
 		outmsg += raw;
 		if (sign(outmsg, src_persona, b64sig) != 1)
-			return build_error("encrypt::" + err, -1);
+			return build_error("encrypt::" + d_err, -1);
 
 		outmsg.insert(0, b64sig);
-		if (version == 1)
+		if (d_version == 1)
 			outmsg.insert(0, marker::version1);
-		else if (version == 2)
+		else if (d_version == 2)
 			outmsg.insert(0, marker::version2);
-		else if (version == 3)
+		else if (d_version == 3)
 			outmsg.insert(0, marker::version3);
 		else
 			outmsg.insert(0, marker::version4);
@@ -304,10 +304,10 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		return 1;
 	}
 
-	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
+	bool has_aad = (d_calgo.find("gcm") != string::npos || d_calgo == "chacha20-poly1305");
 
 	// append public (EC)DH keys
-	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end(); ++it) {
+	for (auto it = d_ecdh_keys.begin(); it != d_ecdh_keys.end(); ++it) {
 		outmsg += *it;
 		outmsg += "\n";
 	}
@@ -376,7 +376,7 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 			vector<unsigned char> secret_i(len, 0);
 
 			if (EVP_PKEY_derive(ctx2.get(), &secret_i[0], &len) != 1)
-				return build_error("encrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+				return build_error("encrypt::EVP_PKEY_derive for key " + d_kex_id_hex, -1);
 			secret_v.insert(secret_v.end(), secret_i.begin(), secret_i.end());
 			slen += (int)len;
 			unique_ptr<EC_KEY, EC_KEY_del> ec(EVP_PKEY_get1_EC_KEY(my_ec.get()), EC_KEY_free);
@@ -458,18 +458,18 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		pqsalt1 = src_persona->get_pqsalt1();
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH] = {0};
-	if (kdf_v1234(version, secret.get(), slen, src_id_hex, dst_id_hex, pqsalt1, key) < 0)
+	if (kdf_v1234(d_version, secret.get(), slen, d_src_id_hex, d_dst_id_hex, pqsalt1, key) < 0)
 		return build_error("encrypt::kdf_v1234: Error deriving key: ", -1);
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
 	if (!c_ctx.get())
 		return build_error("encrypt::EVP_CIPHER_CTX_new: ", -1);
-	if (EVP_EncryptInit_ex(c_ctx.get(), algo2cipher(calgo), nullptr, key, iv) != 1)
+	if (EVP_EncryptInit_ex(c_ctx.get(), algo2cipher(d_calgo), nullptr, key, iv) != 1)
 		return build_error("encrypt::EVP_EncryptInit_ex: ", -1);
 
 	// AEAD ciphers need special treatment
 	if (has_aad) {
 		int aadlen = 0;
-		auto aead = derive_aead(version, src_id_hex, outmsg);
+		auto aead = derive_aead(d_version, d_src_id_hex, outmsg);
 		if (!aead.size())
 			return build_error("encrypt: Can't derive AEAD:", -1);
 
@@ -526,14 +526,14 @@ int message::encrypt(string &raw, persona *src_persona, persona *dst_persona)
 		outmsg.insert(aad_tag_insert_pos, b64_aad_tag);
 
 	if (sign(outmsg, src_persona, b64sig) != 1)
-		return build_error("encrypt::" + err, -1);
+		return build_error("encrypt::" + d_err, -1);
 
 	outmsg.insert(0, b64sig);
-	if (version == 1)
+	if (d_version == 1)
 		outmsg.insert(0, marker::version1);
-	else if (version == 2)
+	else if (d_version == 2)
 		outmsg.insert(0, marker::version2);
-	else if (version == 3)
+	else if (d_version == 3)
 		outmsg.insert(0, marker::version3);
 	else
 		outmsg.insert(0, marker::version4);
@@ -570,9 +570,9 @@ int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_ta
 		// 'e' value might be there or not, so dont compare result like != 2
 		if (sscanf(hdr.c_str() + pos + marker::cfg_num.size(), "%u:%u:", &v, &e) < 1)
 			return build_error("parse_hdr: Invalid cfg-num tag.", -1);
-		if (v != version)
+		if (v != d_version)
 			return build_error("parse_hdr: Version mismatch. Someone modified the message.", -1);
-		ec_domains = e;
+		d_ec_domains = e;
 	}
 
 	// get AAD tag if any (only required by GCM mode ciphers and poly1305)
@@ -596,7 +596,7 @@ int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_ta
 	s = hdr.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
 		return build_error("parse_hdr: Not in OPMSG format (3).", -1);
-	kex_id_hex = s;
+	d_kex_id_hex = s;
 
 
 	// dst persona
@@ -609,7 +609,7 @@ int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_ta
 	s = hdr.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
 		return build_error("parse_hdr: Not in OPMSG format (6).", -1);
-	dst_id_hex = s;
+	d_dst_id_hex = s;
 
 	// new (ec)dh keys included for later (EC)DH kex?
 	string newdh = "";
@@ -622,12 +622,12 @@ int message::parse_hdr(string &hdr, vector<string> &kexdhs, vector<char> &aad_ta
 			return build_error("parse_hdr: Not in OPMSG format (8).", -1);
 		newdh = hdr.substr(pos, nl + marker::ec_dh_end.size() - pos);
 		hdr.erase(pos, nl + marker::ec_dh_end.size() - pos);
-		ecdh_keys.push_back(newdh);
-		if (ecdh_keys.size() >= max_new_dh_keys)
+		d_ecdh_keys.push_back(newdh);
+		if (d_ecdh_keys.size() >= d_max_new_dh_keys)
 			break;
 	}
 
-	if (ec_domains < 1 || ec_domains > 3 || (ecdh_keys.size() % ec_domains) != 0)
+	if (d_ec_domains < 1 || d_ec_domains > 3 || (d_ecdh_keys.size() % d_ec_domains) != 0)
 		return build_error("parse_hdr: Invalid number of EC domains.", -1);
 
 	for (;;) {
@@ -676,14 +676,14 @@ int message::decrypt(string &raw)
 		return build_error("decrypt: Not in OPMSGv1 format (1).", -1);
 	raw.erase(0, pos + marker::opmsg_begin.size());
 
-	version = 1;
+	d_version = 1;
 	// next must come "version=N" , nuke it
 	if ((pos = raw.find(marker::version1)) != 0) {
-		version = 2;
+		d_version = 2;
 		if ((pos = raw.find(marker::version2)) != 0) {
-			version = 3;
+			d_version = 3;
 			if ((pos = raw.find(marker::version3)) != 0) {
-				version = 4;
+				d_version = 4;
 				if ((pos = raw.find(marker::version4)) != 0)
 					return build_error("decrypt: Not in OPMSG format (2). Need to update opmsg?", -1);
 			}
@@ -725,11 +725,11 @@ int message::decrypt(string &raw)
 	if (sscanf(raw.c_str() + marker::algos.size(), "%32[^:]:%32[^:]:%32[^:]:%32[^:]:%32[^\n]", b[0], b[1], b[2], b[3], b[4]) != 5)
 		return build_error("decrypt: Not in OPMSG format (7).", -1);
 
-	phash = b[0]; khash = b[1]; shash = b[2]; calgo = b[3];
-	if (!is_valid_halgo(phash, 0) || !is_valid_halgo(khash, 0) || !is_valid_halgo(shash, 0) || !is_valid_calgo(calgo, 0))
+	d_phash = b[0]; d_khash = b[1]; d_shash = b[2]; d_calgo = b[3];
+	if (!is_valid_halgo(d_phash, 0) || !is_valid_halgo(d_khash, 0) || !is_valid_halgo(d_shash, 0) || !is_valid_calgo(d_calgo, 0))
 		return build_error("decrypt: Not in OPMSG format (8). Invalid algo name. Need to update opmsg?", -1);
 
-	bool has_aad = (calgo.find("gcm") != string::npos || calgo == "chacha20-poly1305");
+	bool has_aad = (d_calgo.find("gcm") != string::npos || d_calgo == "chacha20-poly1305");
 
 	// IV are 24byte encoded as b64 == 32byte
 	b64_decode(reinterpret_cast<char *>(b[4]), 32, iv_kdf);
@@ -747,19 +747,19 @@ int message::decrypt(string &raw)
 	s = raw.substr(pos, nl - pos);
 	if (!is_hex_hash(s))
 		return build_error("decrypt: Not in OPMSG format (11).", -1);
-	src_id_hex = s;
+	d_src_id_hex = s;
 
 	// for src persona, we only need native (RSA or EC) key for signature validation
-	unique_ptr<persona> src_persona(new (nothrow) persona(cfgbase, src_id_hex));
+	unique_ptr<persona> src_persona(new (nothrow) persona(d_cfgbase, d_src_id_hex));
 	if (!src_persona.get() || src_persona->load(marker::rsa_kex_id) < 0 || !src_persona->can_verify())
-		return build_error("decrypt: Unknown or invalid src persona " + src_id_hex, 0);
+		return build_error("decrypt: Unknown or invalid src persona " + d_src_id_hex, 0);
 
 	// check sig
 	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
 	if (!md_ctx.get())
 		return build_error("decrypt::EVP_MD_CTX_create:", -1);
 	EVP_PKEY *evp = src_persona->get_pkey()->d_pub;
-	if (EVP_DigestVerifyInit(md_ctx.get(), nullptr, algo2md(shash), nullptr, evp) != 1)
+	if (EVP_DigestVerifyInit(md_ctx.get(), nullptr, algo2md(d_shash), nullptr, evp) != 1)
 		return build_error("decrypt::EVP_DigestVerifyInit:", -1);
 	if (EVP_DigestVerifyUpdate(md_ctx.get(), raw.c_str(), raw.size()) != 1)
 		return build_error("decrypt::EVP_DigestVerifyUpdate:", -1);
@@ -787,32 +787,32 @@ int message::decrypt(string &raw)
 	string aead_hdr = hdr;
 
 	// parse the remaining parts of the header
-	// Fills: kex_id_hex, dst_id_hex, kexdhs, aad_tag, ecdh_keys, ec_domains
+	// Fills: kex_id_hex, dst_id_hex, kexdhs, aad_tag, d_ecdh_keys, d_ec_domains
 	if (parse_hdr(hdr, kexdhs, aad_tag) != 1)
-		return build_error("decrypt: " + err, -1);
+		return build_error("decrypt: " + d_err, -1);
 
 	// header parsed correctly, split it off data body
 	raw.erase(0, databegin + marker::opmsg_databegin.size());
 
-	unique_ptr<persona> dst_persona(new (nothrow) persona(cfgbase, dst_id_hex));
-	if (!dst_persona.get() || dst_persona->load(kex_id_hex) < 0 || (!dst_persona->can_decrypt() && calgo != "null"))
-		return build_error("decrypt: Unknown or invalid dst persona " + dst_id_hex, 0);
+	unique_ptr<persona> dst_persona(new (nothrow) persona(d_cfgbase, d_dst_id_hex));
+	if (!dst_persona.get() || dst_persona->load(d_kex_id_hex) < 0 || (!dst_persona->can_decrypt() && d_calgo != "null"))
+		return build_error("decrypt: Unknown or invalid dst persona " + d_dst_id_hex, 0);
 
-	if (dst_persona->is_pq1() && (!is_valid_pq_calgo(calgo) || version < 4))
+	if (dst_persona->is_pq1() && (!is_valid_pq_calgo(d_calgo) || d_version < 4))
 		return build_error("decrypt: Persona requires PQC, but non-PQC calgo specified in message.", 0);
 
-	src_name = src_persona->get_name();
+	d_src_name = src_persona->get_name();
 
 	// Not recommended, but if "null" encrypted, import keys and thats all!
-	if (calgo == "null") {
+	if (d_calgo == "null") {
 
-		for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
-			// ec_domains validity checked in parse_hdr()
-			vector<string> v(it, it + ec_domains);
-			if ((src_persona->add_dh_pubkey(khash, v)).empty())
-				it = ecdh_keys.erase(it, it + ec_domains);
+		for (auto it = d_ecdh_keys.begin(); it != d_ecdh_keys.end();) {
+			// d_ec_domains validity checked in parse_hdr()
+			vector<string> v(it, it + d_ec_domains);
+			if ((src_persona->add_dh_pubkey(d_khash, v)).empty())
+				it = d_ecdh_keys.erase(it, it + d_ec_domains);
 			else
-				it += ec_domains;
+				it += d_ec_domains;
 		}
 
 		return 1;
@@ -822,15 +822,15 @@ int message::decrypt(string &raw)
 	if (kexdhs.empty())
 		return build_error("decrypt: Missing Kex tag for non-null encryption!", -1);
 
-	bool has_dh_key = (kex_id_hex != marker::rsa_kex_id);
+	bool has_dh_key = (d_kex_id_hex != marker::rsa_kex_id);
 
 	if (has_dh_key) {
-		ec_dh = dst_persona->find_dh_key(kex_id_hex);
+		ec_dh = dst_persona->find_dh_key(d_kex_id_hex);
 		if (ec_dh.empty())
-			return build_error("decrypt::find_dh_key: No such key " + kex_id_hex, 0);
+			return build_error("decrypt::find_dh_key: No such key " + d_kex_id_hex, 0);
 		for (auto it : ec_dh) {
 			if (!it->can_decrypt())
-				return build_error("decrypt::find_dh_key: No private key " + kex_id_hex, 0);
+				return build_error("decrypt::find_dh_key: No private key " + d_kex_id_hex, 0);
 		}
 
 		// We could make this an exact == match, but maybe peer is only using one of the many keys
@@ -841,9 +841,9 @@ int message::decrypt(string &raw)
 		if (ec_dh.size() < kexdhs.size())
 			return build_error("decrypt: Mismatch in number of ECDH domains.", -1);
 
-		if (peer_isolation && !ec_dh[0]->matches_peer_id(src_id_hex))
-			return build_error("decrypt: persona " + src_id_hex + " references kex id's which were sent to persona " + ec_dh[0]->get_peer_id() +
-			                   ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + dst_id_hex + "/" + kex_id_hex + "/peer and try again\n"
+		if (d_peer_isolation && !ec_dh[0]->matches_peer_id(d_src_id_hex))
+			return build_error("decrypt: persona " + d_src_id_hex + " references kex id's which were sent to persona " + ec_dh[0]->get_peer_id() +
+			                   ".\nAttack or isolation leak detected?\nIf not, rm ~/.opmsg/" + d_dst_id_hex + "/" + d_kex_id_hex + "/peer and try again\n"
 			                   "or set peer_isolation=0 in config file.\n", -1);
 	}
 
@@ -955,7 +955,7 @@ int message::decrypt(string &raw)
 				return build_error("decrypt: Insane large or too small derived keylen.", -1);
 			vector<unsigned char> secret_i(len, 0);
 			if (EVP_PKEY_derive(ctx.get(), &secret_i[0], &len) != 1)
-				return build_error("decrypt::EVP_PKEY_derive for key " + kex_id_hex, -1);
+				return build_error("decrypt::EVP_PKEY_derive for key " + d_kex_id_hex, -1);
 			slen += (int)len;
 			secret_v.insert(secret_v.end(), secret_i.begin(), secret_i.end());
 		}
@@ -974,13 +974,13 @@ int message::decrypt(string &raw)
 		pqsalt1 = dst_persona->get_pqsalt1();
 
 	unsigned char key[OPMSG_MAX_KEY_LENGTH] = {0};
-	if (kdf_v1234(version, secret.get(), slen, src_id_hex, dst_id_hex, pqsalt1, key) < 0)
+	if (kdf_v1234(d_version, secret.get(), slen, d_src_id_hex, d_dst_id_hex, pqsalt1, key) < 0)
 		return build_error("decrypt: Error deriving key: ", -1);
 
 	unique_ptr<EVP_CIPHER_CTX, EVP_CIPHER_CTX_del> c_ctx(EVP_CIPHER_CTX_new(), EVP_CIPHER_CTX_free);
 	if (!c_ctx.get())
 		return build_error("decrypt::EVP_CIPHER_CTX_new:", -1);
-	if (EVP_DecryptInit_ex(c_ctx.get(), algo2cipher(calgo), nullptr, key, iv) != 1)
+	if (EVP_DecryptInit_ex(c_ctx.get(), algo2cipher(d_calgo), nullptr, key, iv) != 1)
 		return build_error("decrypt::EVP_DecryptInit_ex: ", -1);
 
 	if (has_aad) {
@@ -988,7 +988,7 @@ int message::decrypt(string &raw)
 		if (EVP_CIPHER_CTX_ctrl(c_ctx.get(), EVP_CTRL_AEAD_SET_TAG, aad_tag.size(), &aad_tag[0]) != 1)
 			return build_error("decrypt::EVP_CIPHER_CTX_ctrl: ", -1);
 
-		if (version > 3) {
+		if (d_version > 3) {
 			string::size_type idx;
 			if ((idx = aead_hdr.find(marker::aad_tag)) == string::npos)
 				return build_error("decrypt: Can't find AAD tag (1).", -1);
@@ -998,7 +998,7 @@ int message::decrypt(string &raw)
 			aead_hdr.erase(idx, nl_idx - idx + 1);
 		}
 
-		auto aead = derive_aead(version, src_id_hex, aead_hdr);
+		auto aead = derive_aead(d_version, d_src_id_hex, aead_hdr);
 		if (!aead.size())
 			return build_error("decrypt: Can't derive AEAD.", -1);
 		if (EVP_DecryptUpdate(c_ctx.get(), nullptr, &aadlen, &aead[0], aead.size()) != 1)
@@ -1044,13 +1044,13 @@ int message::decrypt(string &raw)
 
 	// Now that integrity is also AEAD-proof (if it exists), import the new (EC)DH keys
 	// that shipped with the message
-	for (auto it = ecdh_keys.begin(); it != ecdh_keys.end();) {
-		// ec_domains validity checked in parse_hdr()
-		vector<string> v(it, it + ec_domains);
-		if ((src_persona->add_dh_pubkey(khash, v)).empty())
-			it = ecdh_keys.erase(it, it + ec_domains);
+	for (auto it = d_ecdh_keys.begin(); it != d_ecdh_keys.end();) {
+		// d_ec_domains validity checked in parse_hdr()
+		vector<string> v(it, it + d_ec_domains);
+		if ((src_persona->add_dh_pubkey(d_khash, v)).empty())
+			it = d_ecdh_keys.erase(it, it + d_ec_domains);
 		else
-			it += ec_domains;
+			it += d_ec_domains;
 	}
 
 	return 1;

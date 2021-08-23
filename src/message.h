@@ -50,28 +50,31 @@ enum {
 
 class message {
 
-	unsigned int version, max_new_dh_keys;
+	unsigned int d_version, d_max_new_dh_keys{MAX_NEW_DH_KEYS};
 
-	std::string sig, src_id_hex, dst_id_hex, kex_id_hex, pubkey_pem, src_name;
-	std::string phash, khash, shash, calgo;
-	std::string cfgbase, err;
+	std::string d_src_id_hex{""}, d_dst_id_hex{""}, d_kex_id_hex{""}, d_src_name{""};
+	std::string d_phash, d_khash, d_shash, d_calgo;
+	std::string d_cfgbase{""}, d_err{""};
 
-	bool peer_isolation;
+	bool d_peer_isolation{0};
+
+	std::vector<std::string> d_ecdh_keys;	// either DH or ECDH keys
+	unsigned int d_ec_domains{1};		// number of curves for cross-domain ECDH
 
 	template<class T>
 	T build_error(const std::string &msg, T r)
 	{
 		int e = 0;
-		err = "message::";
-		err += msg;
+		d_err = "message::";
+		d_err += msg;
 		if ((e = ERR_get_error())) {
 			ERR_load_crypto_strings();
-			err += ":";
-			err += ERR_error_string(e, nullptr);
+			d_err += ":";
+			d_err += ERR_error_string(e, nullptr);
 			ERR_clear_error();
 		} else if (errno) {
-			err += ":";
-			err += strerror(errno);
+			d_err += ":";
+			d_err += strerror(errno);
 		}
 		return r;
 	}
@@ -83,12 +86,8 @@ protected:
 
 public:
 
-	unsigned int ec_domains;		// for cross-domain ECDH
-	std::vector<std::string> ecdh_keys;	// either DH or ECDH keys
-
 	message(unsigned int vers, const std::string &c, const std::string &a1, const std::string &a2, const std::string &a3, const std::string &a4)
-		: version(vers), max_new_dh_keys(MAX_NEW_DH_KEYS), sig(""), src_id_hex(""), dst_id_hex(""), kex_id_hex(""),
-	          pubkey_pem(""), src_name(""), phash(a1), khash(a2), shash(a3), calgo(a4), cfgbase(c), err(""), peer_isolation(0), ec_domains(1)
+		: d_version(vers), d_phash(a1), d_khash(a2), d_shash(a3), d_calgo(a4), d_cfgbase(c)
 	{
 	}
 
@@ -98,52 +97,62 @@ public:
 
 	std::string src_id()
 	{
-		return src_id_hex;
+		return d_src_id_hex;
 	}
 
 	std::string dst_id()
 	{
-		return dst_id_hex;
+		return d_dst_id_hex;
 	}
 
 	std::string kex_id()
 	{
-		return kex_id_hex;
+		return d_kex_id_hex;
 	}
 
 	void src_id(const std::string &s)
 	{
-		src_id_hex = s;
+		d_src_id_hex = s;
 	}
 
 	void dst_id(const std::string &s)
 	{
-		dst_id_hex = s;
+		d_dst_id_hex = s;
 	}
 
 	void kex_id(const std::string &s)
 	{
-		kex_id_hex = s;
+		d_kex_id_hex = s;
 	}
 
 	std::string get_srcname()
 	{
-		return src_name;
+		return d_src_name;
 	}
 
 	std::string get_shash()
 	{
-		return shash;
+		return d_shash;
 	}
 
 	std::string get_calgo()
 	{
-		return calgo;
+		return d_calgo;
 	}
 
 	void enable_peer_isolation()
 	{
-		peer_isolation = 1;
+		d_peer_isolation = 1;
+	}
+
+	int get_ec_domains()
+	{
+		return d_ec_domains;
+	}
+
+	void set_ec_domains(int d)
+	{
+		d_ec_domains = d;
 	}
 
 	int decrypt(std::string &msg);
@@ -152,14 +161,19 @@ public:
 
 	int sign(const std::string &msg, persona *src_persona, std::string &result);
 
-	void add_dh_key(const std::string &s)
+	void add_ecdh_key(const std::string &s)
 	{
-		ecdh_keys.push_back(s);
+		d_ecdh_keys.emplace_back(s);
+	}
+
+	decltype(d_ecdh_keys)::size_type num_ecdh_keys()
+	{
+		return d_ecdh_keys.size();
 	}
 
 	const char *why()
 	{
-		return err.c_str();
+		return d_err.c_str();
 	}
 };
 
