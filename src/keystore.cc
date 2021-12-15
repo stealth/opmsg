@@ -32,14 +32,12 @@
 #include <sys/stat.h>
 
 extern "C" {
-#include <openssl/dh.h>
-#include <openssl/ec.h>
 #include <openssl/bn.h>
 #include <openssl/pem.h>
 #include <openssl/evp.h>
 #include <openssl/bio.h>
-#include <openssl/rsa.h>
 #include <openssl/rand.h>
+#include <openssl/core_names.h>
 }
 
 #include "missing.h"
@@ -95,7 +93,10 @@ static int bn2hexhash(const EVP_MD *mdtype, const BIGNUM *bn, string &result)
 		return -1;
 	BN_bn2bin(bn, bin.get());
 
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
+	unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_delete)> md_ctx(
+		EVP_MD_CTX_create(),
+		EVP_MD_CTX_delete
+	);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
@@ -136,7 +137,10 @@ int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result)
 	// one single newline after we truncated anything after end-marker which does not contain \n
 	s += "\n";
 
-	unique_ptr<EVP_MD_CTX, EVP_MD_CTX_del> md_ctx(EVP_MD_CTX_create(), EVP_MD_CTX_delete);
+	unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_delete)> md_ctx(
+		EVP_MD_CTX_create(),
+		EVP_MD_CTX_delete
+	);
 	if (!md_ctx.get())
 		return -1;
 	if (EVP_DigestInit_ex(md_ctx.get(), mdtype, nullptr) != 1)
@@ -153,16 +157,19 @@ int normalize_and_hexhash(const EVP_MD *mdtype, string &s, string &result)
 }
 
 
-static int key_cb(int a1, int a2, BN_GENCB *a3)
+static int key_cb(EVP_PKEY_CTX *ctx)
 {
-	if (a1 == 1)
+	int a = EVP_PKEY_CTX_get_keygen_info(ctx, 0);
+
+	if (a == 1)
 		fprintf(stderr, "o");
-	else if (a1 == 2)
+	else if (a == 2)
 		fprintf(stderr, "O");
-	else if (a1 == 3)
+	else if (a == 3)
 		fprintf(stderr, "+");
 	else
 		fprintf(stderr, ".");
+
 	return 1;
 }
 
@@ -235,7 +242,7 @@ int keystore::load(const string &hex, uint32_t how)
 
 
 /* global version, as its needed by persona and keystore class */
-int gen_ec(string &pub, string &priv, int nid, string &err)
+int gen_ec(string &pub, string &priv, const std::string &curve, int nid, string &err)
 {
 	char *ptr = nullptr;
 
@@ -245,33 +252,28 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-	unique_ptr<EC_KEY, EC_KEY_del> eckey(EC_KEY_new_by_curve_name(nid), EC_KEY_free);
-	if (!eckey.get()) {
-		err += build_error("gen_ec::EC_KEY_new_by_curve_name:");
-		return -1;
-	}
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> eckey(
+		opmsg::ECKEY_gen(curve, nid),
+		EVP_PKEY_free
+	);
 
-	if (opmsg::EC_KEY_generate_key(eckey.get()) != 1) {
-		err += build_error("gen_ec::EC_KEY_generate_key:");
+	if (!eckey.get()) {
+		err += build_error("gen_ec::ECKEY_gen:");
 		return -1;
 	}
-	if (EC_KEY_check_key(eckey.get()) != 1) {
+/*	if (EC_KEY_check_key(eckey.get()) != 1) {
 		err += build_error("gen_ec::EC_KEY_check_key:");
 		return -1;
 	}
-
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
-	if (!evp.get() || !bio.get()) {
+*/
+	unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()), BIO_free);
+	if (!bio.get()) {
 		err += build_error("gen_ec: OOM");
 		return -1;
 	}
-	if (EVP_PKEY_set1_EC_KEY(evp.get(), eckey.get()) != 1) {
-		err += build_error("gen_ec::EVP_PKEY_set1_EC_KEY: Error generating EC key");
-		return -1;
-	}
-	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1) {
-		err += build_error("gen_ec::PEM_write_bio_PUBKEY: Error generating EC key");
+
+	if (PEM_write_bio_PUBKEY(bio.get(), eckey.get()) != 1) {
+		err += build_error("gen_ec::PEM_write_bio_PUBKEY:");
 		return -1;
 	}
 
@@ -284,8 +286,8 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 		return -1;
 	}
 
-	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1) {
-		err += build_error("gen_ec::PEM_write_bio_PrivateKey: Error generating EC key");
+	if (PEM_write_bio_PrivateKey(bio.get(), eckey.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1) {
+		err += build_error("gen_ec::PEM_write_bio_PrivateKey:");
 		return -1;
 	}
 
@@ -296,58 +298,57 @@ int gen_ec(string &pub, string &priv, int nid, string &err)
 }
 
 
-int keystore::gen_ec(string &pub, string &priv, int nid)
+int keystore::gen_ec(string &pub, string &priv, const string &curve, int nid)
 {
 	d_err = "keystore::";
-	return opmsg::gen_ec(pub, priv, nid, d_err);
+	return opmsg::gen_ec(pub, priv, curve, nid, d_err);
 }
 
 
 int keystore::gen_rsa(string &pub, string &priv)
 {
-	BIGNUM *b = nullptr;
-	BN_GENCB *cb_ptr = nullptr;
-	char *ptr = nullptr;
-
 	pub = "";
 	priv = "";
+
+	unsigned int e = strtoul(config::rsa_e.c_str(), nullptr, 10), bits = config::rsa_len;
+
+	unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pctx(
+		EVP_PKEY_CTX_new_from_name(nullptr, "RSA", nullptr),
+		EVP_PKEY_CTX_free
+	);
+	if (!pctx.get())
+		return build_error("gen_rsa::EVP_PKEY_CTX_new_from_name:", -1);
 
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-	unique_ptr<BIGNUM, BIGNUM_del> e(nullptr, BN_free);
-	if (BN_dec2bn(&b, config::rsa_e.c_str()) == 0)
-		return build_error("gen_rsa::BN_dec2b: Error generating RSA key", -1);
-	e.reset(b);
+	OSSL_PARAM params[] = {
+		OSSL_PARAM_construct_uint("e", &e),
+		OSSL_PARAM_construct_uint("bits", &bits),
+		OSSL_PARAM_END
+	};
 
-// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was not there!
-#if HAVE_BN_GENCB_NEW
-	unique_ptr<BN_GENCB, BN_GENCB_del> cb(BN_GENCB_new(), BN_GENCB_free);
-	if (!(cb_ptr = cb.get()))
-		return build_error("gen_rsa: OOM", -1);
-#else
-	BN_GENCB cb_s;
-	cb_ptr = &cb_s;
-#endif
-	BN_GENCB_set(cb_ptr, key_cb, nullptr);
+	if (EVP_PKEY_keygen_init(pctx.get()) != 1)
+		return build_error("gen_rsa::EVP_PKEY_keygen_init:", -1);
+	if (EVP_PKEY_CTX_set_params(pctx.get(), params) != 1)
+		return build_error("gen_rsa::EVP_PKEY_CTX_set_params:", -1);
 
-	unique_ptr<RSA, RSA_del> rsa(RSA_new(), RSA_free);
-	if (!rsa.get())
-		return build_error("gen_rsa::RSA_ne: OOM", -1);
-	if (RSA_generate_key_ex(rsa.get(), config::rsa_len, e.get(), cb_ptr) != 1)
-		return build_error("gen_rsa::RSA_generate_key_ex: Error generating RSA key", -1);
+	EVP_PKEY_CTX_set_cb(pctx.get(), key_cb);
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
-	if (!evp.get() || !bio.get())
+	EVP_PKEY *tpkey = nullptr;
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(nullptr, EVP_PKEY_free);
+	if (EVP_PKEY_generate(pctx.get(), &tpkey) != 1)
+		return build_error("gen_rsa::EVP_PKEY_generate:", -1);
+	pkey.reset(tpkey);
+
+	unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()), BIO_free);
+	if (!bio.get())
 		return build_error("gen_rsa: OOM", -1);
 
-	if (EVP_PKEY_set1_RSA(evp.get(), rsa.get()) != 1)
-		return build_error("gen_rsa::EVP_PKEY_set1_RSA: Error generating RSA key", -1);
-
-	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1)
+	if (PEM_write_bio_PUBKEY(bio.get(), pkey.get()) != 1)
 		return build_error("gen_rsa::PEM_write_bio_PUBKEY: Error generating RSA key", -1);
 
+	char *ptr = nullptr;
 	long l = BIO_get_mem_data(bio.get(), &ptr);
 	pub = string(ptr, l);
 
@@ -355,7 +356,7 @@ int keystore::gen_rsa(string &pub, string &priv)
 	if (!bio.get())
 		return build_error("gen_rsa::BIO_new: OOM", -1);
 
-	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
+	if (PEM_write_bio_PrivateKey(bio.get(), pkey.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
 		return build_error("gen_rsa::PEM_write_bio_PrivateKey: Error generating RSA key", -1);
 
 	l = BIO_get_mem_data(bio.get(), &ptr);
@@ -414,10 +415,10 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		close(fd);
 	}
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(nullptr, EVP_PKEY_free);
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_pub(nullptr, EVP_PKEY_free);
 	if (pub_pem.size() > 0) {
-		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
+		unique_ptr<char, decltype(&free)> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
 		if (!bio.get())
 			return build_error("add_persona: OOM", nullptr);
 
@@ -440,10 +441,10 @@ persona *keystore::add_persona(const string &name, const string &c_pub_pem, cons
 		close(fd);
 	}
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_priv(nullptr, EVP_PKEY_free);
 	if (priv_pem.size() > 0) {
-		unique_ptr<char, free_del> sdup(strdup(priv_pem.c_str()), free);
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), priv_pem.size()), BIO_free);
+		unique_ptr<char, decltype(&free)> sdup(strdup(priv_pem.c_str()), free);
+		unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_mem_buf(sdup.get(), priv_pem.size()), BIO_free);
 		if (!bio.get())
 			return build_error("add_persona: OOM", nullptr);
 
@@ -577,7 +578,7 @@ int persona::load_dh(const string &hex)
 		return build_error("load_dh: This key was already loaded.", -1);
 
 	string dhfile = "";
-	unique_ptr<FILE, FILE_del> f(nullptr, ffclose);
+	unique_ptr<FILE, decltype(&ffclose)> f(nullptr, ffclose);
 
 	// up to 3 session keys per kex-id (kex-id is hexhash of first key)
 	for (int i = 0; i < 3; ++i) {
@@ -608,7 +609,10 @@ int persona::load_dh(const string &hex)
 			if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 				break;
 			rewind(f.get());
-			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+			unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp(
+				PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr),
+				EVP_PKEY_free
+			);
 			if (!evp.get())
 				break;
 			pbox->d_pub = evp.release();
@@ -631,7 +635,10 @@ int persona::load_dh(const string &hex)
 			if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
 				return build_error("load_dh::fread: invalid (EC)DH privkey " + hex, -1);
 			rewind(f.get());
-			unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+			unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp(
+				PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr),
+				EVP_PKEY_free
+			);
 			if (!evp.get())
 				return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
 			pbox->d_priv = evp.release();
@@ -707,7 +714,7 @@ int persona::make_pq1(const string &type, const string &secret, const string &sa
 	b64_encode(d_pqsalt, b64_pqsalt);
 	if (!b64_pqsalt.size())
 		return build_error("make_pq1: Base64 encode returned empty string?!", -1);
-	unique_ptr<FILE, FILE_del> f(fopen(pqc.c_str(), "w"), ffclose);
+	unique_ptr<FILE, decltype(&ffclose)> f(fopen(pqc.c_str(), "w"), ffclose);
 	if (!f.get())
 		return build_error("make_pq1::fopen:", -1);
 	fprintf(f.get(), "# DO NOT EDIT. KEEP SECRET.\npqtype=%s\npqsalt1=%s\n", type.c_str(), b64_pqsalt.c_str());
@@ -749,7 +756,6 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	string dir = d_cfgbase + "/" + d_id;
 	string file = dir + "/name";
 	string hex = "";
-	DH *dhp = nullptr;
 
 	if (!is_hex_hash(d_id))
 		return build_error("load: Not a valid persona id", -1);
@@ -763,7 +769,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	}
 
 	// load name, if any
-	unique_ptr<FILE, FILE_del> f(fopen(file.c_str(), "r"), ffclose);
+	unique_ptr<FILE, decltype(&ffclose)> f(fopen(file.c_str(), "r"), ffclose);
 	if (f.get()) {
 		char s[512] = {0};
 		rlockf(f.get());
@@ -851,7 +857,10 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	if (!f.get())
 		return build_error("load: Error reading public key file for " + d_id, -1);
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_pub(
+		PEM_read_PUBKEY(f.get(), nullptr, nullptr, nullptr),
+		EVP_PKEY_free
+	);
 	if (!evp_pub.get())
 		return build_error("load::PEM_read_PUBKEY: Error reading public key file for " + d_id, -1);
 	rewind(f.get());
@@ -861,7 +870,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 
 	file = dir + "/" + d_ptype + ".priv.pem";
 	f.reset(fopen(file.c_str(), "r"));
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(nullptr, EVP_PKEY_free);
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_priv(nullptr, EVP_PKEY_free);
 	if (f.get()) {
 		evp_priv.reset(PEM_read_PrivateKey(f.get(), nullptr, nullptr, nullptr));
 		if (!evp_priv.get())
@@ -879,12 +888,13 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	if (d_ptype == marker::rsa) {
 		// load DH params if avail
 		file = dir + "/dhparams.pem";
-		f.reset(fopen(file.c_str(), "r"));
-		if (f.get()) {
-			if (!PEM_read_DHparams(f.get(), &dhp, nullptr, nullptr))
-				return build_error("load::PEM_read_DHparams: Error reading DH params for " + d_id, -1);
-			d_dh_params = new (nothrow) DHbox(dhp, nullptr);
-			// do not free dh
+		unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_file(file.c_str(), "r"), BIO_free);
+		if (bio.get()) {
+			EVP_PKEY *dhp = nullptr;
+			if (!PEM_read_bio_Parameters(bio.get(), &dhp))
+				return build_error("load::PEM_read_bio_Parameters: Error reading DH params for " + d_id, -1);
+			d_dh_params = new (nothrow) PKEYbox(dhp, nullptr);
+			// do not free dhp
 		}
 	}
 
@@ -920,7 +930,6 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 }
 
 
-extern "C" typedef void (*vector_pkeybox_del)(vector<PKEYbox *> *);
 extern "C" void vector_pkeybox_free(vector<PKEYbox *> *v)
 {
 	for (auto it = v->begin(); it != v->end(); ++it)
@@ -939,15 +948,15 @@ PKEYbox *persona::set_pkey(EVP_PKEY *pub, EVP_PKEY *priv)
 
 
 // create new DH struct from a given PEM DH params string
-DHbox *persona::new_dh_params(const string &pem)
+PKEYbox *persona::new_dh_params(const string &pem)
 {
-	DH *dh = nullptr;
+	EVP_PKEY *dh = nullptr;
 	int fd = -1;
 	string file = d_cfgbase + "/" + d_id + "/dhparams.pem";
 
 	if ((fd = open(file.c_str(), O_CREAT|O_RDWR|O_TRUNC, 0600)) < 0)
 		return build_error("new_dh_params::open: Error opening DH params for " + d_id, nullptr);
-	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
+	unique_ptr<FILE, decltype(&ffclose)> f(fdopen(fd, "r+"), ffclose);
 	if (!f.get()) {
 		close(fd);
 		return build_error("new_dh_params::fdopen:", nullptr);
@@ -957,15 +966,18 @@ DHbox *persona::new_dh_params(const string &pem)
 		return build_error("new_dh_params::fwrite:", nullptr);;
 	rewind(f.get());
 
-	if (!PEM_read_DHparams(f.get(), &dh, nullptr, nullptr))
-		return build_error("new_dh_params::PEM_read_DHparams: Error reading DH params for " + d_id, nullptr);
+	unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_fp(f.get(), BIO_NOCLOSE), BIO_free);
+	if (bio.get() && !PEM_read_bio_Parameters(bio.get(), &dh))
+		return build_error("new_dh_params::PEM_read_bio_Parameters: Error reading DH params for " + d_id, nullptr);
 
 	f.reset();	// calls unlock
 
 	if (d_dh_params)
 		delete d_dh_params;
 
-	d_dh_params = new (nothrow) DHbox(dh, nullptr);
+// EVP_PKEY_param_check
+
+	d_dh_params = new (nothrow) PKEYbox(dh, nullptr);
 	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
@@ -975,44 +987,61 @@ DHbox *persona::new_dh_params(const string &pem)
 }
 
 
-DHbox *persona::new_dh_params()
+PKEYbox *persona::new_dh_params()
 {
 	size_t r = 0;
-	int fd = -1, ecode = 0;
-	BN_GENCB *cb_ptr = nullptr;
+	int fd = -1;
 
-	unique_ptr<DH, DH_del> dh(DH_new(), DH_free);
-	if (!dh.get())
-		return build_error("new_dh_params::DH_new: OOM", nullptr);
+	unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pctx(
+		EVP_PKEY_CTX_new_from_name(nullptr, "DH", nullptr),
+		EVP_PKEY_CTX_free
+	);
+	if (!pctx.get())
+		return build_error("new_dh_params::EVP_PKEY_CTX_new_from_name: OOM", nullptr);
 
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
 
-// In OpenSSL 1.1.0, static decl of BN_GENCB disappeared and before BN_GENCB_new was not there!
-#if HAVE_BN_GENCB_NEW
-	unique_ptr<BN_GENCB, BN_GENCB_del> cb(BN_GENCB_new(), BN_GENCB_free);
-	if (!(cb_ptr = cb.get()))
-		return build_error("new_dh_params: OOM", nullptr);
-#else
-	BN_GENCB cb_s;
-	cb_ptr = &cb_s;
-#endif
+	if (EVP_PKEY_paramgen_init(pctx.get()) != 1)
+		return build_error("new_dh_params::EVP_PKEY_keygen_init:", nullptr);
 
-	BN_GENCB_set(cb_ptr, key_cb, nullptr);
-	if (DH_generate_parameters_ex(dh.get(), config::dh_plen, 5, cb_ptr) != 1 || DH_check(dh.get(), &ecode) != 1)
-		return build_error("new_dh_paramms::DH_generate_parameters_ex: Error generating DH params for " + d_id, nullptr);
+	/*
+	OSSL_PARAM params[] = {
+		OSSL_PARAM_construct_uint("pbits", &pbits),
+		OSSL_PARAM_construct_utf8_string("generator", "5", 2),
+		OSSL_PARAM_END
+	};
+
+	if (EVP_PKEY_CTX_set_params(pctx.get(), params) != 1)
+		return build_error("new_dh_params::EVP_PKEY_CTX_set_params:", nullptr);
+	*/
+
+	if (EVP_PKEY_CTX_set_dh_paramgen_prime_len(pctx.get(), config::dh_plen) <= 0)
+		return build_error("new_dh_params::EVP_PKEY_CTX_set_dh_paramgen_prime_len:", nullptr);
+	if (EVP_PKEY_CTX_set_dh_paramgen_generator(pctx.get(), 5) <= 0)
+		return build_error("new_dh_params::EVP_PKEY_CTX_set_dh_paramgen_generator:", nullptr);
+
+	EVP_PKEY_CTX_set_cb(pctx.get(), key_cb);
+
+	EVP_PKEY *tpkey = nullptr;
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> pkey(nullptr, EVP_PKEY_free);
+	if (EVP_PKEY_generate(pctx.get(), &tpkey) != 1)
+		return build_error("new_dh_params::EVP_PKEY_generate:", nullptr);
+	pkey.reset(tpkey);
 
 	string file = d_cfgbase + "/" + d_id + "/dhparams.pem";
 	if ((fd = open(file.c_str(), O_CREAT|O_RDWR|O_TRUNC, 0600)) < 0)
 		return build_error("new_dh_params::open: Error opening DH params for " + d_id, nullptr);
-	unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
+	unique_ptr<FILE, decltype(&ffclose)> f(fdopen(fd, "r+"), ffclose);
 	if (!f.get()) {
 		close(fd);
 		return build_error("new_dh_params::fdopen:", nullptr);
 	}
 	wlockf(f.get());
-	if (PEM_write_DHparams(f.get(), dh.get()) != 1)
-		return build_error("new_dh_params::PEM_write_DHparams: Error writing DH params for " + d_id, nullptr);
+
+	unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new_fp(f.get(), BIO_NOCLOSE), BIO_free);
+	if (!bio.get() || PEM_write_bio_Parameters(bio.get(), pkey.get()) != 1)
+		return build_error("new_dh_params::PEM_write_bio_Parameters: Error writing DH params for " + d_id, nullptr);
 	rewind(f.get());
 
 	char buf[8192];
@@ -1024,13 +1053,11 @@ DHbox *persona::new_dh_params()
 	if (d_dh_params)
 		delete d_dh_params;
 
-	d_dh_params = new (nothrow) DHbox(dh.release(), nullptr);
+	d_dh_params = new (nothrow) PKEYbox(pkey.release(), nullptr);
 	if (!d_dh_params)
 		return build_error("new_dh_params::OOM", nullptr);
 
 	d_dh_params->d_pub_pem = string(buf, r);
-
-	// do not call DH_free(dh)
 
 	return d_dh_params;
 }
@@ -1059,7 +1086,7 @@ persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 		d_err = "persona::gen_kex_key::";
 		// for each defined curve
 		for (unsigned int i = 0; i < config::curve_nids.size(); ++i) {
-			if (opmsg::gen_ec(pub_pem, priv_pem, config::curve_nids[i], d_err) < 0)
+			if (opmsg::gen_ec(pub_pem, priv_pem, config::curves[i], config::curve_nids[i], d_err) < 0)
 				return v0;
 			d_err = "";
 			if (normalize_and_hexhash(md, pub_pem, h) < 0)
@@ -1088,17 +1115,23 @@ persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 	if (mkdir_helper(d_cfgbase + "/" + d_id, tmpdir) < 0)
 		return build_error("gen_kex_key::mkdir:", v0);
 
-	unique_ptr<VPKEYbox, vector_pkeybox_del> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
+	unique_ptr<VPKEYbox, decltype(&vector_pkeybox_free)> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
 
 	for (unsigned int i = 0; i < kex_keys.size(); ++i) {
 		pub_pem = kex_keys[i].first;
 		priv_pem = kex_keys[i].second;
 
-		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
+		unique_ptr<char, decltype(&free)> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, decltype(&BIO_free)> bio(
+			BIO_new_mem_buf(sdup.get(), pub_pem.size()),
+			BIO_free
+		);
 		if (!bio.get())
 			return build_error("gen_kex_key: OOM", v0);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_pub(
+			PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr),
+			EVP_PKEY_free
+		);
 		if (!evp_pub.get())
 			return build_error("gen_kex_key::PEM_read_bio_PUBKEY: Error reading PEM key", v0);
 
@@ -1107,7 +1140,10 @@ persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 		if (!bio.get())
 			return build_error("gen_kex_key: OOM", v0);
 
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_priv(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_priv(
+			PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr),
+			EVP_PKEY_free
+		);
 		if (!evp_priv.get())
 			return build_error("gen_kex_key::PEM_read_bio_PrivateKey: Error reading PEM key", v0);
 
@@ -1120,7 +1156,7 @@ persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 
 		if ((fd = open(dhfile1.c_str(), O_RDWR|O_CREAT|O_EXCL, 0600)) < 0)
 			return build_error("gen_kex_key::open:", v0);
-		unique_ptr<FILE, FILE_del> f(fdopen(fd, "r+"), ffclose);
+		unique_ptr<FILE, decltype(&ffclose)> f(fdopen(fd, "r+"), ffclose);
 		if (!f.get())
 			return build_error("gen_kex_key::fdopen:", v0);
 		if (fwrite(pub_pem.c_str(), pub_pem.size(), 1, f.get()) != 1)
@@ -1187,7 +1223,8 @@ persona::VPKEYbox persona::gen_kex_key(const EVP_MD *md, const string &peer)
 int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex)
 {
 	char *ptr = nullptr;
-	int ecode = 0;
+
+	// OpenSSL 3.0.0: man EVP_PKEY-DH
 
 	if (RAND_load_file("/dev/urandom", 256) != 256)
 		RAND_load_file("/dev/random", 8);
@@ -1195,28 +1232,37 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	if (!d_dh_params)
 		return build_error("gen_dh_key: Invalid persona. No DH params for " + d_id, -1);
 
-	unique_ptr<DH, DH_del> dh(DHparams_dup(d_dh_params->d_pub), DH_free);
-	if (!dh.get() || DH_generate_key(dh.get()) != 1 || DH_check(dh.get(), &ecode) != 1)
-		return build_error("gen_dh_key::DH_generate_key: Error generating DH key for " + d_id, -1);
+	unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> gctx(
+		EVP_PKEY_CTX_new_from_pkey(nullptr, d_dh_params->d_pub, nullptr),
+		EVP_PKEY_CTX_free
+	);
+
+	if (EVP_PKEY_param_check(gctx.get()) != 1)
+		return build_error("gen_dh_key::EVP_PKEY_param_check failed.", -1);
+
+	EVP_PKEY *tkey = nullptr;
+	if (!gctx.get() || EVP_PKEY_keygen_init(gctx.get()) != 1 || EVP_PKEY_generate(gctx.get(), &tkey) != 1)
+		return build_error("gen_dh_key::EVP_PKEY_generate for " + d_id + " :", -1);
+
+	unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> dh_key(tkey, EVP_PKEY_free);
 
 	hex = "";
 	pub = "";
 	priv = "";
 
-	const BIGNUM *pub_key = nullptr;
-	opmsg::DH_get0_key(dh.get(), &pub_key, nullptr);
-	if (bn2hexhash(md, pub_key, hex) < 0)
+	BIGNUM *tbn = nullptr;
+	unique_ptr<BIGNUM, decltype(&BN_free)> pub_key(nullptr, BN_free);
+	if (!EVP_PKEY_get_bn_param(dh_key.get(), "pub", &tbn))
+		return build_error("gen_dh_key::EVP_PKEY_get_bn_param:", -1);
+	pub_key.reset(tbn);
+	if (bn2hexhash(md, pub_key.get(), hex) < 0)
 		return build_error("gen_dh_key::bn2hexhash: Error hashing DH key.", -1);
 
-	unique_ptr<EVP_PKEY, EVP_PKEY_del> evp(EVP_PKEY_new(), EVP_PKEY_free);
-	unique_ptr<BIO, BIO_del> bio(BIO_new(BIO_s_mem()), BIO_free);
-	if (!evp.get() || !bio.get())
+	unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()), BIO_free);
+	if (!bio.get())
 		return build_error("gen_dh_key:: OOM", -1);
 
-	if (EVP_PKEY_set1_DH(evp.get(), dh.get()) != 1)
-		return build_error("gen_dh_key::EVP_PKEY_set1_EC_KEY: Error generating DH key", -1);
-
-	if (PEM_write_bio_PUBKEY(bio.get(), evp.get()) != 1)
+	if (PEM_write_bio_PUBKEY(bio.get(), dh_key.get()) != 1)
 		return build_error("gen_dh_key::PEM_write_bio_PUBKEY: Error generating DH key", -1);
 
 	long l = BIO_get_mem_data(bio.get(), &ptr);
@@ -1226,7 +1272,7 @@ int persona::gen_dh_key(const EVP_MD *md, string &pub, string &priv, string &hex
 	if (!bio.get())
 		return build_error("gen_dh_key::BIO_new: OOM", -1);
 
-	if (PEM_write_bio_PrivateKey(bio.get(), evp.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
+	if (PEM_write_bio_PrivateKey(bio.get(), dh_key.get(), nullptr, nullptr, 0, nullptr, nullptr) != 1)
 		return build_error("gen_dh_key::PEM_write_bio_PrivateKey: Error generating DH key", -1);
 
 	l = BIO_get_mem_data(bio.get(), &ptr);
@@ -1269,17 +1315,23 @@ persona::VPKEYbox persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 	if (pubs.size() > 3)
 		return build_error("add_dh_pubkey: Too many keys in import vector.", v0);
 
-	unique_ptr<VPKEYbox, vector_pkeybox_del> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
-	unique_ptr<FILE, FILE_del> f(nullptr, ffclose);
+	unique_ptr<VPKEYbox, decltype(&vector_pkeybox_free)> pboxes(new (nothrow) VPKEYbox, vector_pkeybox_free);
+	unique_ptr<FILE, decltype(&ffclose)> f(nullptr, ffclose);
 
 	for (unsigned int i = 0; i < pubs.size(); ++i) {
 		string &pub_pem = pubs[i];
 
-		unique_ptr<char, free_del> sdup(strdup(pub_pem.c_str()), free);
-		unique_ptr<BIO, BIO_del> bio(BIO_new_mem_buf(sdup.get(), pub_pem.size()), BIO_free);
+		unique_ptr<char, decltype(&free)> sdup(strdup(pub_pem.c_str()), free);
+		unique_ptr<BIO, decltype(&BIO_free)> bio(
+			BIO_new_mem_buf(sdup.get(), pub_pem.size()),
+			BIO_free
+		);
 		if (!bio.get())
 			return build_error("add_dh_pubkey: OOM", v0);
-		unique_ptr<EVP_PKEY, EVP_PKEY_del> evp_pub(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+		unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> evp_pub(
+			PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr),
+			EVP_PKEY_free
+		);
 		if (!evp_pub.get())
 			return build_error("add_dh_pubkey::PEM_read_bio_PUBKEY: Error reading PEM key", v0);
 
@@ -1297,10 +1349,12 @@ persona::VPKEYbox persona::add_dh_pubkey(const EVP_MD *md, vector<string> &pubs)
 		if (keytype == EVP_PKEY_DH) {
 			if (i > 0)
 				return build_error("add_dh_key:: Trying to add multiple DH keys as one.", v0);
-			unique_ptr<DH, DH_del> dh(EVP_PKEY_get1_DH(evp_pub.get()), DH_free);
-			const BIGNUM *pub_key = nullptr;
-			opmsg::DH_get0_key(dh.get(), &pub_key, nullptr);
-			if (!dh.get() || bn2hexhash(md, pub_key, hex) < 0)
+			BIGNUM *tkey = nullptr;
+			unique_ptr<BIGNUM, decltype(&BN_free)> pub_key(nullptr, BN_free);
+			if (!EVP_PKEY_get_bn_param(evp_pub.get(), "pub", &tkey))
+				return build_error("gen_dh_key::EVP_PKEY_get_bn_param:", v0);
+			pub_key.reset(tkey);
+			if (!pub_key.get() || bn2hexhash(md, pub_key.get(), hex) < 0)
 				return build_error("add_dh_key::bn2hexhash: Error hashing DH pubkey.", v0);
 		} else if (keytype == EVP_PKEY_EC) {
 			string h = "";

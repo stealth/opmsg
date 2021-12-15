@@ -8,7 +8,7 @@ CXX=c++
 DEFS=
 INC=
 
-#SSL=/opt/ssl/openssl-1.1.1
+SSL=/opt/ssl/openssl-3.0.0
 
 #recommended if supported by your GCC
 #DEFS+=-fsanitize=address
@@ -22,9 +22,10 @@ INC=
 
 
 # alternate SSL builds
-#INC+=-I$(SSL)/include
-#LIBS+=-L$(SSL)/lib
-#LIBS+=-Wl,--rpath=$(SSL)/lib
+INC+=-I$(SSL)/include
+LIBS+=-L$(SSL)/lib
+LIBS+=-L$(SSL)/lib64
+LIBS+=-Wl,--rpath=$(SSL)/lib -Wl,--rpath=$(SSL)/lib64
 
 
 # LibreSSL setups also need this

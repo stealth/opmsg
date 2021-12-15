@@ -118,38 +118,6 @@ public:
 };
 
 
-class DHbox {
-
-public:
-
-	DH *d_pub{nullptr}, *d_priv{nullptr};
-
-	std::string d_pub_pem{""}, d_priv_pem{""}, d_hex{""};
-
-	DHbox(DH *dh1, DH *dh2) : d_pub(dh1), d_priv(dh2)
-	{
-	}
-
-	virtual ~DHbox()
-	{
-		if (d_pub)
-			DH_free(d_pub);
-		if (d_priv)
-			DH_free(d_priv);
-	}
-
-	bool can_decrypt()
-	{
-		return d_priv != nullptr;
-	}
-
-	bool can_encrypt()
-	{
-		return d_pub != nullptr;
-	}
-};
-
-
 typedef enum : uint32_t {
 	LFLAGS_NONE	= 0,
 	LFLAGS_NAME	= 1,
@@ -174,7 +142,7 @@ class persona {
 	std::map<std::string, unsigned int> d_imported;
 
 	PKEYbox *d_pkey{nullptr};
-	DHbox *d_dh_params{nullptr};
+	PKEYbox *d_dh_params{nullptr};
 
 	std::string d_cfgbase{""}, d_err{""};
 
@@ -309,9 +277,9 @@ public:
 
 	int check_type();
 
-	DHbox *new_dh_params();
+	PKEYbox *new_dh_params();
 
-	DHbox *new_dh_params(const std::string &pem);
+	PKEYbox *new_dh_params(const std::string &pem);
 
 	VPKEYbox add_dh_pubkey(const std::string &, std::vector<std::string> &);
 
@@ -411,7 +379,7 @@ public:
 
 	int gen_rsa(std::string &, std::string &);
 
-	int gen_ec(std::string &, std::string &, int);
+	int gen_ec(std::string &, std::string &, const std::string &, int);
 
 	persona *add_persona(const std::string &, const std::string &, const std::string &, const std::string &);
 

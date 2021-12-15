@@ -32,36 +32,6 @@ extern "C" {
 
 namespace opmsg {
 
-extern "C" typedef void (*EVP_PKEY_del)(EVP_PKEY *);
-
-extern "C" typedef void (*EVP_PKEY_CTX_del)(EVP_PKEY_CTX *);
-
-extern "C" typedef void (*EVP_MD_CTX_del)(EVP_MD_CTX *);
-
-extern "C" typedef void (*EVP_CIPHER_CTX_del)(EVP_CIPHER_CTX *);
-
-extern "C" typedef void (*DH_del)(DH *);
-
-extern "C" typedef void (*RSA_del)(RSA *);
-
-extern "C" typedef int (*BIO_del)(BIO *);
-
-extern "C" typedef void (*BIGNUM_del)(BIGNUM *);
-
-extern "C" typedef void (*BN_CTX_del)(BN_CTX *);
-
-extern "C" typedef void (*BN_GENCB_del)(BN_GENCB *);
-
-extern "C" typedef void (*EC_GROUP_del)(EC_GROUP *);
-
-extern "C" typedef void (*EC_KEY_del)(EC_KEY *);
-
-extern "C" typedef void (*EC_POINT_del)(EC_POINT *);
-
-extern "C" typedef int (*FILE_del)(FILE *);
-
-extern "C" typedef void (*free_del)(void *);
-
 extern "C" int ffclose(FILE *f);
 
 }

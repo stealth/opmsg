@@ -23,11 +23,12 @@
 
 extern "C" {
 #include <openssl/ec.h>
+#include <string>
 }
 
 namespace opmsg {
 
-int EC_KEY_generate_key(EC_KEY *);
+EVP_PKEY *ECKEY_gen(const std::string &, int);
 
 }
 

@@ -23,7 +23,6 @@
 #include <cstring>
 #include <memory>
 #include <new>
-#include "deleters.h"
 #include "config.h"
 
 extern "C" {
@@ -31,6 +30,7 @@ extern "C" {
 #include <openssl/bn.h>
 #include <openssl/rand.h>
 #include <openssl/pem.h>
+#include <openssl/core_names.h>
 }
 
 
@@ -152,47 +152,86 @@ static int bk_bnrand_range(BIGNUM *r, const BIGNUM *range)
 }
 
 
-int EC_KEY_generate_key(EC_KEY *eckey)
+EVP_PKEY *ECKEY_gen(const string &curve, int nid)
 {
 	if (config::brainkey12.size() < 16)
-		return ::EC_KEY_generate_key(eckey);
+		return EVP_EC_gen(curve.c_str());
 
-	const EC_GROUP *ec_grp = EC_KEY_get0_group(eckey);	// not unique
-	unique_ptr<BIGNUM, BIGNUM_del> order(BN_new(), BN_free);
-	unique_ptr<BN_CTX, BN_CTX_del> ctx(BN_CTX_new(), BN_CTX_free);
-	unique_ptr<BIGNUM, BIGNUM_del> priv_key(BN_new(), BN_free);
-	unique_ptr<EC_POINT, EC_POINT_del> pub_key(EC_POINT_new(ec_grp), EC_POINT_free);
+	unique_ptr<EC_GROUP, decltype(&EC_GROUP_free)> ec_grp{
+		EC_GROUP_new_by_curve_name(nid),
+		EC_GROUP_free
+	};
+	unique_ptr<BIGNUM, decltype(&BN_free)> order{
+		BN_new(),
+		BN_free
+	};
+	unique_ptr<BIGNUM, decltype(&BN_free)> priv_key{
+		BN_new(),
+		BN_free
+	};
+	unique_ptr<BN_CTX, decltype(&BN_CTX_free)> bctx{
+		BN_CTX_new(),
+		BN_CTX_free
+	};
+	unique_ptr<EC_POINT, decltype(&EC_POINT_free)> pub_key{
+		EC_POINT_new(ec_grp.get()),
+		EC_POINT_free
+	};
 
-	if (!ctx.get() || !order.get() || !priv_key.get() || !pub_key.get() || !ec_grp)
-		return 0;
+	if (!bctx.get() || !order.get() || !priv_key.get() || !pub_key.get() || !ec_grp.get())
+		return nullptr;
 
-	if (EC_GROUP_get_order(ec_grp, order.get(), nullptr) != 1)
-		return 0;
+	if (EC_GROUP_get_order(ec_grp.get(), order.get(), bctx.get()) != 1)
+		return nullptr;
 
 	do {
 		if (bk_bnrand_range(priv_key.get(), order.get()) != 1)
-			return 0;
+			return nullptr;
 	} while (BN_is_zero(priv_key.get()));
 
-	if (EC_POINT_mul(ec_grp, pub_key.get(), priv_key.get(), nullptr, nullptr, ctx.get()) != 1)
-		return 0;
+	if (EC_POINT_mul(ec_grp.get(), pub_key.get(), priv_key.get(), nullptr, nullptr, bctx.get()) != 1)
+		return nullptr;
 
-	if (EC_KEY_set_private_key(eckey, priv_key.get()) != 1)
-		return 0;
-	if (EC_KEY_set_public_key(eckey, pub_key.get()) != 1)
-		return 0;
+	unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> pctx{
+		EVP_PKEY_CTX_new_id(EVP_PKEY_EC, nullptr),
+		EVP_PKEY_CTX_free
+	};
+	if (!pctx.get() || EVP_PKEY_fromdata_init(pctx.get()) != 1)
+		return nullptr;
 
-	// important to set the encoding forms so that the PEM is equal
-	// among libressl and openssl, which use different forms by default
-	// to have the same persona hash on both sides
-	EC_KEY_set_conv_form(eckey, POINT_CONVERSION_COMPRESSED);
+	int priv_len = BN_num_bytes(priv_key.get());
+	if (priv_len <= 0)
+		return nullptr;
+	unique_ptr<unsigned char[]> priv_bin(new (nothrow) unsigned char[priv_len]);
 
-#ifndef OPENSSL_EC_NAMED_CURVE
-#define OPENSSL_EC_NAMED_CURVE 0x1
-#endif
-	EC_KEY_set_asn1_flag(eckey, OPENSSL_EC_NAMED_CURVE);
+	// attention: must use native format as expected by OSSL_PARAM_construct_BN() later
+	if (!priv_bin.get() || BN_bn2nativepad(priv_key.get(), priv_bin.get(), priv_len) != priv_len)
+		return nullptr;
 
-	return 1;
+	unsigned char *pub_bin = nullptr;
+	int pub_len = EC_POINT_point2buf(ec_grp.get(), pub_key.get(), POINT_CONVERSION_COMPRESSED, &pub_bin, bctx.get());
+	if (pub_len <= 0 || !pub_bin)
+		return nullptr;
+
+	unique_ptr<char, decltype(&free)> gname(strdup(curve.c_str()), free);
+	char nc[]{"named_curve"}, cmp[]{"compressed"};
+	int one = 1;
+
+	OSSL_PARAM p[] = {
+		OSSL_PARAM_construct_utf8_string("group", gname.get(), 0),
+		OSSL_PARAM_construct_utf8_string("encoding", nc, 0),
+		OSSL_PARAM_construct_utf8_string("point-format", cmp, 0),
+		OSSL_PARAM_construct_int("include-public", &one),
+		OSSL_PARAM_construct_BN("priv", priv_bin.get(), priv_len),
+		OSSL_PARAM_construct_octet_string("pub", pub_bin, pub_len),
+		OSSL_PARAM_END
+	};
+
+	EVP_PKEY *evp = nullptr;
+	EVP_PKEY_fromdata(pctx.get(), &evp, EVP_PKEY_KEYPAIR, p);
+	OPENSSL_free(pub_bin);
+
+	return evp;
 }
 
 

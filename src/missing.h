@@ -55,16 +55,10 @@ extern "C" {
 namespace opmsg {
 
 #ifdef HAVE_BORINGSSL
-BIGNUM *EC_POINT_point2bn(const EC_GROUP *, const EC_POINT *, point_conversion_form_t, BIGNUM *, BN_CTX *);
-
-EC_POINT *EC_POINT_bn2point(const EC_GROUP *, const BIGNUM *, EC_POINT *, BN_CTX *);
 
 int EVP_PKEY_base_id(const EVP_PKEY *pkey);
+
 #endif
-
-void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key);
-
-int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key);
 
 }
 

@@ -35,87 +35,12 @@ namespace opmsg {
 using namespace std;
 
 #ifdef HAVE_BORINGSSL
-BIGNUM *EC_POINT_point2bn(const EC_GROUP *grp, const EC_POINT *pnt, point_conversion_form_t form, BIGNUM *ret, BN_CTX *ctx)
-{
-	size_t blen = 0;
-
-	if ((blen = EC_POINT_point2oct(grp, pnt, form, nullptr, 0, ctx)) == 0)
-		return nullptr;
-
-	unique_ptr<unsigned char[]> buf(new (nothrow) unsigned char[blen]);
-	if (!buf.get())
-		return nullptr;
-
-	if (!EC_POINT_point2oct(grp, pnt, form, buf.get(), blen, ctx))
-		return nullptr;
-	ret = BN_bin2bn(buf.get(), blen, ret);
-
-	return ret;
-}
-
-
-EC_POINT *EC_POINT_bn2point(const EC_GROUP *grp, const BIGNUM *bn, EC_POINT *pnt, BN_CTX *ctx)
-{
-	size_t blen = 0;
-	EC_POINT *ret = nullptr;
-
-	if ((blen = BN_num_bytes(bn)) == 0)
-		return nullptr;
-	unique_ptr<unsigned char[]> buf(new (nothrow) unsigned char[blen]);
-	if (!buf.get())
-		return nullptr;
-
-	if (!BN_bn2bin(bn, buf.get()))
-		return nullptr;
-
-	if (!pnt) {
-		if (!(ret = EC_POINT_new(grp)))
-			return nullptr;
-	} else
-		ret = pnt;
-
-	if (EC_POINT_oct2point(grp, ret, buf.get(), blen, ctx) != 1) {
-		if (!pnt)
-			EC_POINT_clear_free(ret);
-		return nullptr;
-	}
-
-	return ret;
-}
-
 
 int EVP_PKEY_base_id(const EVP_PKEY *pkey)
 {
 	return EVP_PKEY_type(pkey->type);
 }
 #endif
-
-
-void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
-{
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
-	if (pub_key)
-		*pub_key = dh->pub_key;
-	if (priv_key)
-		*priv_key = dh->priv_key;
-#elif OPENSSL_VERSION_NUMBER >= 0x1010001fL     // 1.1.0a
-	::DH_get0_key(dh, pub_key, priv_key);
-#else
-	::DH_get0_key(dh, const_cast<BIGNUM **>(pub_key), const_cast<BIGNUM **>(priv_key));
-#endif
-}
-
-
-int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
-{
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
-	dh->pub_key = pub_key;
-	dh->priv_key = priv_key;
-#else
-	::DH_set0_key(dh, pub_key, priv_key);
-#endif
-	return 1;
-}
 
 
 }
