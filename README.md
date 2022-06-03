@@ -68,42 +68,43 @@ $ cp build/opmsg /usr/local/bin/
 $ mkdir ~/.opmsg && touch ~/.opmsg/config
 $ opmsg
 
-opmsg: version=1.69 -- (C) 2016 opmsg-team: https://github.com/stealth/opmsg
+opmsg: version=1.84 (C) 2021 Sebastian Krahmer: https://github.com/stealth/opmsg
 
 
 Usage: opmsg [--confdir dir] [--native] [--encrypt dst-ID] [--decrypt] [--sign]
-        [--verify file] <--persona ID> [--import] [--list] [--listpgp]
-        [--short] [--long] [--split] [--new(ec)p] [--newdhp] [--calgo name]
-        [--phash name [--name name] [--in infile] [--out outfile]
-        [--link target id] [--deniable] [--burn]
+	[--verify file] <--persona ID> [--import] [--list] [--listpgp]
+	[--short] [--long] [--split] [--new(ec)p] [--newdhp] [--brainkey1/2]
+	[--salt1/2 slt] [--calgo name] [--phash name [--name name] [--in infile]
+	[--out outfile] [--link target id] [--deniable] [--burn]
 
-        --confdir,      -c      (must come first) defaults to ~/.opmsg
-        --native,       -R      EC/RSA override (dont use existing (EC)DH keys)
-        --encrypt,      -E      recipients persona hex id (-i to -o, needs -P)
-        --decrypt,      -D      decrypt --in to --out
-        --sign,         -S      create detached signature file from -i via -P
-        --verify,       -V      vrfy hash contained in detached file against -i
-        --persona,      -P      your persona hex id as used for signing
-        --import,       -I      import new persona from --in
-        --list,         -l      list all personas
-        --listpgp,      -L      list personas in PGP format (for mutt etc.)
-        --short                 short view of hex ids
-        --long                  long view of hex ids
-        --split                 split view of hex ids
-        --newp,         -N      create new RSA persona (should add --name)
-        --newecp                create new EC persona (should add --name)
-        --deniable              when create/import personas, do it deniable
-        --link                  link (your) --persona as default src to this
-                                target id
-        --newdhp                create new DHparams for persona (rarely needed)
-        --calgo,        -C      use this algo for encryption
-        --phash,        -p      use this hash algo for hashing personas
-        --in,           -i      input file (stdin)
-        --out,          -o      output file (stdout)
-        --name,         -n      use this name for newly created personas
-        --burn                  (!dangerous!) burn private (EC)DH key after
-                                decryption to achieve 'full' PFS
-
+	--confdir,	-c	(must come first) defaults to ~/.opmsg
+	--native,	-R	EC/RSA override (dont use existing (EC)DH keys)
+	--encrypt,	-E	recipients persona hex id (-i to -o, needs -P)
+	--decrypt,	-D	decrypt --in to --out
+	--sign,		-S	create detached signature file from -i via -P
+	--verify,	-V	vrfy hash contained in detached file against -i
+	--persona,	-P	your persona hex id as used for signing
+	--import,	-I	import new persona from --in
+	--list,		-l	list all personas
+	--listpgp,	-L	list personas in PGP format (for mutt etc.)
+	--short			short view of hex ids
+	--long			long view of hex ids
+	--split			split view of hex ids
+	--newp,		-N	create new RSA persona (should add --name)
+	--newecp		create new EC persona (should add --name)
+	--deniable		when create/import personas, do it deniable
+	--link			link (your) --persona as default src to this
+				target id
+	--newdhp		create new DHparams for persona (rarely needed)
+	--brainkey1/2		use secret to derive deniable persona keys
+	--salt1/2		optional: use salt when when using brainkeys
+	--calgo,	-C	use this algo for encryption
+	--phash,	-p	use this hash algo for hashing personas
+	--in,		-i	input file (stdin)
+	--out,		-o	output file (stdout)
+	--name,		-n	use this name for newly created personas
+	--burn			(!dangerous!) burn private (EC)DH key after
+				decryption to achieve 'full' PFS
 ```
 
 If you want to use additional features, such as from `opmux` (opmsg/gpg auto forward) or `opcoin`
@@ -355,6 +356,34 @@ Security in good old Germany) durin the transitioning phase. Note, that neither 
 supports PQC yet, nor are there any standartized algorithms, nor recommend any of the PQC
 projects to use their code in production, so having this transitioning solution is the most
 portable way of adding PQC to *opmsg*.
+
+
+Message Encryption
+------------------
+
+In order to encrypt messages, you have to specify the persona ID of the recipient:
+
+```
+$ opmsg -E 12344d8921323601 --out msg1.opmsg
+...
+```
+
+If no `--in` parameter is given, the message is read from `stdin` until `Ctrl-C`.
+The fastest way is to use the long form of the persona ID, but its also the most
+inconvenient form. Above example uses the short ID of the target persona. It already
+requires some searching inside the keystore for that particluar ID, but its still fast.
+The most convenient, but slowest form allows to use names as recipient. It requires to
+search the entire keybase until a name-match is found. Note, that this is potentially
+ambigious and you must not have more than one persona with the same name field in your
+keystore:
+
+```
+$ opmsg --name friend@localhost -E name --in msg2 --out msg2.opmsg
+...
+```
+
+`-E name` refers to use names instead of IDs. Still, it is recommended to use the hex-id as
+recipient, since its the more bullet-proof approach.
 
 
 Keys
