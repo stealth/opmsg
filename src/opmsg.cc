@@ -1,7 +1,7 @@
 /*
  * This file is part of the opmsg crypto message framework.
  *
- * (C) 2015-2021 by Sebastian Krahmer,
+ * (C) 2015-2022 by Sebastian Krahmer,
  *               sebastian [dot] krahmer [at] gmail [dot] com
  *
  * opmsg is free software: you can redistribute it and/or modify
@@ -1092,6 +1092,16 @@ int main(int argc, char **argv)
 					// 2 to also get rid of leading "0x"
 					dst_ids.push_back(s.substr(2, ridx - 2));
 					s.erase(0, ridx + 1);
+				}
+			} else if (s == "name" && !name.empty()) {
+				keystore ks(config::phash, config::cfgbase);
+				if (ks.load("") < 0) {
+					estr<<prefix<<"ERROR: Loading keystore.\n"; eflush();
+					return -1;
+				}
+				for (auto i = ks.first_pers(); i != ks.end_pers(); i = ks.next_pers(i)) {
+					if (i->second->can_encrypt() && i->second->get_name() == name)
+						dst_ids.push_back(i->second->get_id());
 				}
 			} else {
 				s.erase(remove(s.begin(), s.end(), ' '), s.end());
