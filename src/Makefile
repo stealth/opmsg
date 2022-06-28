@@ -13,9 +13,6 @@ INC=
 #recommended if supported by your GCC
 #DEFS+=-fsanitize=address
 
-# Cygwin was reported to require this:
-#DEFS+=-U__STRICT_ANSI__
-
 # reported to work with OSX brew
 #INC+=-I/opt/local/include
 #LIBS+=-L/opt/local/lib
@@ -49,7 +46,7 @@ INC=
 
 .PHONY: all build contrib clean distclean
 
-CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
+CXXFLAGS=-Wall -O2 -pedantic -std=gnu++11 $(INC) $(DEFS)
 
 LD=$(CXX)
 LDFLAGS=
