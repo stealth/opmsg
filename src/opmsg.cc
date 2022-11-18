@@ -1027,8 +1027,9 @@ int main(int argc, char **argv)
 		estr<<prefix<<"mkdir: "<<strerror(errno)<<"\nFAILED.\n"; eflush();
 		return -1;
 	}
-	if (parse_config(config::cfgbase) < 0) {
-		estr<<prefix<<"WARN: No readable config file found.\n";
+
+	if ((r = parse_config(config::cfgbase)) == 0) {
+		estr<<prefix<<"INFO: No config file found, using defaults.\n";
 		eflush();
 	}
 

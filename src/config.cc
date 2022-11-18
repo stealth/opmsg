@@ -90,12 +90,14 @@ int parse_config(const string &cfgbase)
 	map<string, int> seen_ec;
 
 	ifstream fin{cfgbase + "/config", ios::in};
-	if (!fin)
-		return -1;
 
 	string sline = "";
 
-	for (;;) {
+	int ret = 0;
+
+	for (;fin;) {
+
+		ret = 1;
 		getline(fin, sline, '\n');
 		if (!fin.good())
 			break;
@@ -274,7 +276,7 @@ int parse_config(const string &cfgbase)
 #endif
 	}
 
-	return 0;
+	return ret;
 }
 
 }

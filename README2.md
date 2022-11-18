@@ -40,7 +40,7 @@ bitcoin address (name) matches the string that you actually want to import__. Th
 becomes the name of that opmsg persona and
 `opmsg -l` will later list it as name, so you immediately see where it is coming from.
 
-If the transaction is evaulated as valid by the bitcoin network and becomes part of the blockchain,
+If the transaction is evaluated as valid by the bitcoin network and becomes part of the blockchain,
 you have (very) strong evidence that your peer holds the private key. You can tell your peer
 to transfer some small amounts of BTC to your address from the address you imported, to check
 that you are talking to the right person.
