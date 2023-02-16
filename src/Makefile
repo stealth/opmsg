@@ -4,7 +4,8 @@
 # openssl-dev, openssl-asan etc.), adjust the path names below accordingly.
 #
 
-CXX=c++
+CXX?=c++
+CXXSTD?=c++11
 DEFS=
 INC=
 
@@ -49,7 +50,7 @@ INC=
 
 .PHONY: all build contrib clean distclean
 
-CXXFLAGS=-Wall -O2 -pedantic -std=c++11 $(INC) $(DEFS)
+CXXFLAGS=-Wall -O2 -pedantic -std=$(CXXSTD) $(INC) $(DEFS)
 
 LD=$(CXX)
 LDFLAGS=
