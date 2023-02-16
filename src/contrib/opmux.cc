@@ -324,9 +324,6 @@ int main(int argc, char **argv, char **envp)
 		}
 	}
 
-	if (status_fd != 2)
-		dup2(status_fd, 2);
-
 	struct sigaction sa;
 	memset(&sa, 0, sizeof(sa));
 	sa.sa_handler = sig_int;
@@ -400,21 +397,31 @@ int main(int argc, char **argv, char **envp)
 		if (WIFEXITED(status)) {
 			status = WEXITSTATUS(status);
 
+			FILE *status_f = fdopen(status_fd, "a");
+
 			// Add some success message in case of success, to make "pgp_decryption_okay" happy
-			if (status == 0 || gpg_error_ok) {
+			if (status_f && (status == 0 || gpg_error_ok)) {
+
 				string mua = "unknown";
 				if (getenv("OPMUX_MUA") != nullptr)
 					mua = getenv("OPMUX_MUA");
 
 				// thunderbird enigmail is happy with the following:
 				if (mua != "mutt" && has_opmsg) {
-					fprintf(stderr, "\n[GNUPG:] SIG_ID KEEPAWAYFROMFIRE 1970-01-01 0000000000"
+					fprintf(status_f, "\n[GNUPG:] SIG_ID KEEPAWAYFROMFIRE 1970-01-01 0000000000"
 					                "\n[GNUPG:] GOODSIG 7350735073507350 opmsg"
 					                "\n[GNUPG:] VALIDSIG AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 1970-01-01 00000000000"
 					                " 0 4 0 1 8 01 AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 							"\n[GNUPG:] TRUST_ULTIMATE\n");
 				}
-				fprintf(stderr, "\nopmux: SUCCESS.\n");
+				if (has_opmsg) {
+					fprintf(status_f, "\n[GNUPG:] DECRYPTION_OKAY"
+					                "\n[GNUPG:] GOODMDC"
+					                "\n[GNUPG:] END_DECRYPTION\n");
+				}
+				fprintf(status_f, "\nopmux: SUCCESS.\n");
+
+				//Not: fclose(status_f);
 			}
 			return status;
 		}
