@@ -155,7 +155,8 @@ typedef enum : uint32_t {
 	LFLAGS_NAME	= 1,
 	LFLAGS_KEY	= 2,
 	LFLAGS_KEX	= 4,
-	LFLAGS_ALL	= LFLAGS_NAME|LFLAGS_KEY|LFLAGS_KEX
+	LFLAGS_KEX_PRIV	= 8,
+	LFLAGS_ALL	= LFLAGS_NAME|LFLAGS_KEY|LFLAGS_KEX|LFLAGS_KEX_PRIV
 } load_flags;
 
 
@@ -197,7 +198,7 @@ class persona {
 		return r;
 	}
 
-	int load_dh(const std::string &);
+	int load_dh(const std::string &, uint32_t how = LFLAGS_ALL);
 
 public:
 

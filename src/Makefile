@@ -9,10 +9,15 @@ CXXSTD?=c++11
 DEFS=
 INC=
 
-#SSL=/opt/ssl/openssl-1.1.1
+#SSL=/opt/ssl/libressl-3.7.0
 
-#recommended if supported by your GCC
-#DEFS+=-fsanitize=address
+# alternate SSL builds such as with LibreSSL need this
+#INC+=-I$(SSL)/include
+#LIBS+=-L$(SSL)/lib
+#LIBS+=-Wl,--rpath=$(SSL)/lib
+
+# Older LibreSSL setups also need this. Newer (>= 3.x ?) don't
+#DEFS+=-DHAVE_BN_GENCB_NEW=0
 
 # Cygwin was reported to require this:
 #DEFS+=-U__STRICT_ANSI__
@@ -20,18 +25,6 @@ INC=
 # reported to work with OSX brew
 #INC+=-I/opt/local/include
 #LIBS+=-L/opt/local/lib
-
-
-# alternate SSL builds
-#INC+=-I$(SSL)/include
-#LIBS+=-L$(SSL)/lib
-#LIBS+=-Wl,--rpath=$(SSL)/lib
-
-
-# LibreSSL setups also need this
-#DEFS+=-DHAVE_BN_GENCB_NEW=0
-#DEFS+=-DHAVE_LIBRESSL
-
 
 # BoringSSL. Be warned, BoringSSL creates incompatible
 # PEM files. So this is not recommended and just for
@@ -117,6 +110,4 @@ clean:
 
 distclean:
 	rm -rf build
-
-
 

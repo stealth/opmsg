@@ -26,6 +26,7 @@ extern "C" {
 #include <openssl/bn.h>
 #include <openssl/ec.h>
 #include <openssl/dh.h>
+#include <openssl/opensslv.h>
 }
 
 
@@ -93,7 +94,8 @@ int EVP_PKEY_base_id(const EVP_PKEY *pkey)
 
 void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
 {
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+// not exactly sure when LibreSSL made the change
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || (defined LIBRESSL_VERSION_NUMBER && LIBRESSL_VERSION_NUMBER <= 0x30000000L) || defined HAVE_BORINGSSL
 	if (pub_key)
 		*pub_key = dh->pub_key;
 	if (priv_key)
@@ -108,7 +110,8 @@ void DH_get0_key(const DH *dh, const BIGNUM **pub_key, const BIGNUM **priv_key)
 
 int DH_set0_key(DH *dh, BIGNUM *pub_key, BIGNUM *priv_key)
 {
-#if OPENSSL_VERSION_NUMBER <= 0x10100000L || defined HAVE_LIBRESSL || defined HAVE_BORINGSSL
+// not exactly sure when LibreSSL made the change
+#if OPENSSL_VERSION_NUMBER <= 0x10100000L || (defined LIBRESSL_VERSION_NUMBER && LIBRESSL_VERSION_NUMBER <= 0x30000000L) || defined HAVE_BORINGSSL
 	dh->pub_key = pub_key;
 	dh->priv_key = priv_key;
 #else

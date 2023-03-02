@@ -758,7 +758,7 @@ int do_list(const string &name)
 		search = name;
 
 	keystore ks(config::phash, config::cfgbase);
-	if (ks.load(search) < 0) {
+	if (ks.load(search, LFLAGS_ALL & ~LFLAGS_KEX_PRIV) < 0) {	// speedup: No privkeys load needed for listing
 		estr<<prefix<<"ERROR: Loading keystore.\n"; eflush();
 		return -1;
 	}

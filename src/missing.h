@@ -39,7 +39,7 @@ extern "C" {
 #define EVP_CTRL_AEAD_GET_TAG EVP_CTRL_GCM_GET_TAG
 #endif
 
-#if OPENSSL_VERSION_NUMBER > 0x10100000L && !(defined HAVE_LIBRESSL)
+#if OPENSSL_VERSION_NUMBER > 0x10100000L && !(defined LIBRESSL_VERSION_NUMBER)
 
 /* Idiots... Not just they are renaming EVP_MD_CTX_destroy() to EVP_MD_CTX_free() in OpenSSL >= 1.1,
  * they define EVP_MD_CTX_destroy(ctx) macro along (with braces) so we cant define the symbol

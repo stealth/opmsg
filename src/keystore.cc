@@ -565,7 +565,7 @@ decltype(persona::d_keys)::iterator persona::next_key(const decltype(d_keys)::it
 // the files named dh.{pub, priv}. This makes sense, as both keytypes are later used
 // for a DH Kex or ECDH Kex.
 //
-int persona::load_dh(const string &hex)
+int persona::load_dh(const string &hex, uint32_t how)
 {
 	size_t r = 0;
 	char buf[8192], *fr = nullptr;
@@ -615,7 +615,7 @@ int persona::load_dh(const string &hex)
 			pbox->d_pub_pem = string(buf, r);
 		} while (0);
 
-		// now load private part, if available
+		// now load private part, if available and requested
 		dhfile = d_cfgbase + "/" + d_id + "/" + hex;
 		if (i > 0) {
 			char s[32] = {0};
@@ -624,8 +624,8 @@ int persona::load_dh(const string &hex)
 		} else
 			dhfile += "/dh.priv.pem";
 
-		f.reset(fopen(dhfile.c_str(), "r"));
-		do {
+		while (how & LFLAGS_KEX_PRIV) {
+			f.reset(fopen(dhfile.c_str(), "r"));
 			if (!f.get())
 				break;
 			if ((r = fread(buf, 1, sizeof(buf), f.get())) <= 0)
@@ -636,7 +636,9 @@ int persona::load_dh(const string &hex)
 				return build_error("load_dh::PEM_read_PrivateKey: Error reading (EC)DH privkey " + hex, -1);
 			pbox->d_priv = evp.release();
 			pbox->d_priv_pem = string(buf, r);
-		} while (0);
+
+			break;
+		}
 
 		if (pbox->d_pub || pbox->d_priv)
 			d_keys[hex].push_back(pbox.release());
@@ -893,7 +895,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 	if (dh_hex.size() > 0) {
 		if (dh_hex == marker::rsa_kex_id || dh_hex == marker::ec_kex_id)
 			return 0;
-		return this->load_dh(dh_hex);
+		return this->load_dh(dh_hex, how);
 	}
 
 	if (!(how & LFLAGS_KEX))
@@ -911,7 +913,7 @@ int persona::load(const std::string &dh_hex, uint32_t how)
 		hex = de->d_name;
 		if (!is_hex_hash(hex))
 			continue;
-		this->load_dh(hex);
+		this->load_dh(hex, how);
 	}
 	closedir(d);
 
