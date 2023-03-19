@@ -288,7 +288,7 @@ Deniable op messages are integrity protected and feature all crypto benefits.
 Of course for this to work you also want to have fully encrypted your disk to leave no
 forensic artifacts and dont want to cite your peer in reply-messages as this proofs
 that you were able to decrypt a mail from your peer, e.g. you are hold of a certain
-private session key (`kex-id`). Thats a common mistake people make who dont sign
+private session key (`kex-id`). That's a common mistake people make who dont sign
 their emails and think everything is deniable.
 
 
@@ -419,8 +419,8 @@ identify (EC)DH keys.
 **Attention:** If you keep encrypted op-messages in your mailbox,
 do not throw away this persona. You wont be able to decrypt these mails
 afterwards! Throwing away a persona also means to throw away all keying
-material. Thats why _opmsg_ has no switch to erase personas. You have
-to do it by hand, by rm-ing the subdirectory of your choice. Thats
+material. That's why _opmsg_ has no switch to erase personas. You have
+to do it by hand, by rm-ing the subdirectory of your choice. That's
 easily done, but keep in mind that any dangling op-messages in your
 inbox will become unreadable, as all keys will be lost. If you want to
 benefit from PFS, you have to archive the **decrypted** messages and
@@ -528,7 +528,7 @@ parallel. Note that some mutt installs (neomutt) require the `-n` switch
 if you load your own config via `-F` in order to skip processing of system-wide
 config files. This would otherwise overload all of your pgp variables.
 
-But theres also another option: Using _opmux_:
+But there's also another option: Using _opmux_:
 
 ```
 set pgp_long_ids
@@ -603,7 +603,7 @@ unless you specify it via `-P` on the commandline or used `--link`:
 
 # 1 or 2. Default is 2. The KDF in version=2 is hardened against evil maid attacks.
 # Only use version=2 if you know your peer uses opmsg >= 1.60 that can handle version=2.
-# Your peer then automatically chooses right version. Theres no config change needed
+# Your peer then automatically chooses right version. There's no config change needed
 # for your peer.
 version=2
 
